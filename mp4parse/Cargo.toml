@@ -7,7 +7,7 @@ authors = [
   "Alfredo Yang <ayang@mozilla.com>",
   "Jon Bauman <jbauman@mozilla.com>",
 ]
-
+edition = "2018"
 description = "Parser for ISO base media file format (mp4)"
 documentation = "https://docs.rs/mp4parse/"
 license = "MPL-2.0"

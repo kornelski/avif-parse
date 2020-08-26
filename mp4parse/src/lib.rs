@@ -7,10 +7,6 @@
 #[macro_use]
 extern crate log;
 
-extern crate bitreader;
-extern crate byteorder;
-extern crate fallible_collections;
-extern crate num_traits;
 use bitreader::{BitReader, ReadInto};
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use fallible_collections::TryClone;
@@ -25,7 +21,7 @@ use std::ops::{Range, RangeFrom};
 mod macros;
 
 mod boxes;
-use boxes::{BoxType, FourCC};
+use crate::boxes::{BoxType, FourCC};
 
 // Unit tests.
 #[cfg(test)]
@@ -91,7 +87,7 @@ trait Offset {
 }
 
 /// Wraps a reader to track the current offset
-struct OffsetReader<'a, T: 'a> {
+struct OffsetReader<'a, T> {
     reader: &'a mut T,
     offset: u64,
 }
@@ -1040,21 +1036,21 @@ impl Track {
 }
 
 /// See ISO 14496-12:2015 § 4.2
-struct BMFFBox<'a, T: 'a> {
+struct BMFFBox<'a, T> {
     head: BoxHeader,
     content: Take<&'a mut T>,
 }
 
-struct BoxIter<'a, T: 'a> {
+struct BoxIter<'a, T> {
     src: &'a mut T,
 }
 
 impl<'a, T: Read> BoxIter<'a, T> {
-    fn new(src: &mut T) -> BoxIter<T> {
+    fn new(src: &mut T) -> BoxIter<'_, T> {
         BoxIter { src }
     }
 
-    fn next_box(&mut self) -> Result<Option<BMFFBox<T>>> {
+    fn next_box(&mut self) -> Result<Option<BMFFBox<'_, T>>> {
         let r = read_box_header(self.src);
         match r {
             Ok(h) => Ok(Some(BMFFBox {
@@ -1094,7 +1090,7 @@ impl<'a, T: Read> BMFFBox<'a, T> {
         &self.head
     }
 
-    fn box_iter<'b>(&'b mut self) -> BoxIter<BMFFBox<'a, T>> {
+    fn box_iter<'b>(&'b mut self) -> BoxIter<'_, BMFFBox<'a, T>> {
         BoxIter::new(self)
     }
 }
@@ -1191,7 +1187,7 @@ fn read_fullbox_version_no_flags<T: ReadBytesExt>(src: &mut T) -> Result<u8> {
 }
 
 /// Skip over the entire contents of a box.
-fn skip_box_content<T: Read>(src: &mut BMFFBox<T>) -> Result<()> {
+fn skip_box_content<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<()> {
     // Skip the contents of unknown chunks.
     let to_skip = {
         let header = src.get_header();
@@ -1206,7 +1202,7 @@ fn skip_box_content<T: Read>(src: &mut BMFFBox<T>) -> Result<()> {
 }
 
 /// Skip over the remain data of a box.
-fn skip_box_remain<T: Read>(src: &mut BMFFBox<T>) -> Result<()> {
+fn skip_box_remain<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<()> {
     let remain = {
         let header = src.get_header();
         let len = src.bytes_left();
@@ -1340,7 +1336,7 @@ pub fn read_avif<T: Read>(f: &mut T, context: &mut AvifContext) -> Result<()> {
 /// Currently requires the primary item to be an av01 item type and generates
 /// an error otherwise.
 /// See ISO 14496-12:2015 § 8.11.1
-fn read_avif_meta<T: Read + Offset>(src: &mut BMFFBox<T>) -> Result<AvifMeta> {
+fn read_avif_meta<T: Read + Offset>(src: &mut BMFFBox<'_, T>) -> Result<AvifMeta> {
     let version = read_fullbox_version_no_flags(src)?;
 
     if version != 0 {
@@ -1419,7 +1415,7 @@ fn read_avif_meta<T: Read + Offset>(src: &mut BMFFBox<T>) -> Result<AvifMeta> {
 
 /// Parse a Primary Item Box
 /// See ISO 14496-12:2015 § 8.11.4
-fn read_pitm<T: Read>(src: &mut BMFFBox<T>) -> Result<u32> {
+fn read_pitm<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<u32> {
     let version = read_fullbox_version_no_flags(src)?;
 
     let item_id = match version {
@@ -1433,7 +1429,7 @@ fn read_pitm<T: Read>(src: &mut BMFFBox<T>) -> Result<u32> {
 
 /// Parse an Item Information Box
 /// See ISO 14496-12:2015 § 8.11.6
-fn read_iinf<T: Read>(src: &mut BMFFBox<T>) -> Result<TryVec<ItemInfoEntry>> {
+fn read_iinf<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<ItemInfoEntry>> {
     let version = read_fullbox_version_no_flags(src)?;
 
     match version {
@@ -1479,7 +1475,7 @@ impl std::fmt::Display for U32BE {
 
 /// Parse an Item Info Entry
 /// See ISO 14496-12:2015 § 8.11.6.2
-fn read_infe<T: Read>(src: &mut BMFFBox<T>) -> Result<ItemInfoEntry> {
+fn read_infe<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<ItemInfoEntry> {
     // According to the standard, it seems the flags field should be 0, but
     // at least one sample AVIF image has a nonzero value.
     let (version, _) = read_fullbox_extra(src)?;
@@ -1508,7 +1504,7 @@ fn read_infe<T: Read>(src: &mut BMFFBox<T>) -> Result<ItemInfoEntry> {
     Ok(ItemInfoEntry { item_id, item_type })
 }
 
-fn read_iref<T: Read>(src: &mut BMFFBox<T>) -> Result<TryVec<ItemReferenceEntry>> {
+fn read_iref<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<ItemReferenceEntry>> {
     let mut entries = TryVec::new();
     let version = read_fullbox_version_no_flags(src)?;
     if version > 1 {
@@ -1539,7 +1535,7 @@ fn read_iref<T: Read>(src: &mut BMFFBox<T>) -> Result<TryVec<ItemReferenceEntry>
     Ok(entries)
 }
 
-fn read_iprp<T: Read>(src: &mut BMFFBox<T>) -> Result<TryVec<AssociatedProperty>> {
+fn read_iprp<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<AssociatedProperty>> {
     let mut iter = src.box_iter();
     let mut properties = TryVec::new();
     let mut associations = TryVec::new();
@@ -1601,7 +1597,7 @@ pub struct AssociatedProperty {
     pub property: ImageProperty,
 }
 
-fn read_ipma<T: Read>(src: &mut BMFFBox<T>) -> Result<TryVec<Association>> {
+fn read_ipma<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<Association>> {
     let (version, flags) = read_fullbox_extra(src)?;
 
     let mut associations = TryVec::new();
@@ -1632,7 +1628,7 @@ fn read_ipma<T: Read>(src: &mut BMFFBox<T>) -> Result<TryVec<Association>> {
     Ok(associations)
 }
 
-fn read_ipco<T: Read>(src: &mut BMFFBox<T>) -> Result<TryVec<ImageProperty>> {
+fn read_ipco<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<ImageProperty>> {
     let mut properties = TryVec::new();
 
     let mut iter = src.box_iter();
@@ -1650,7 +1646,7 @@ fn read_ipco<T: Read>(src: &mut BMFFBox<T>) -> Result<TryVec<ImageProperty>> {
     Ok(properties)
 }
 
-fn read_pixi<T: Read>(src: &mut BMFFBox<T>) -> Result<TryVec<u8>> {
+fn read_pixi<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<u8>> {
     let version = read_fullbox_version_no_flags(src)?;
     if version != 0 {
         return Err(Error::Unsupported("pixi version"));
@@ -1664,7 +1660,7 @@ fn read_pixi<T: Read>(src: &mut BMFFBox<T>) -> Result<TryVec<u8>> {
     Ok(channels)
 }
 
-fn read_auxc<T: Read>(src: &mut BMFFBox<T>) -> Result<TryString> {
+fn read_auxc<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryString> {
     let version = read_fullbox_version_no_flags(src)?;
     if version != 0 {
         return Err(Error::Unsupported("auxC version"));
@@ -1682,7 +1678,7 @@ fn read_auxc<T: Read>(src: &mut BMFFBox<T>) -> Result<TryString> {
 
 /// Parse an item location box inside a meta box
 /// See ISO 14496-12:2015 § 8.11.3
-fn read_iloc<T: Read>(src: &mut BMFFBox<T>) -> Result<TryVec<ItemLocationBoxItem>> {
+fn read_iloc<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<ItemLocationBoxItem>> {
     let version: IlocVersion = read_fullbox_version_no_flags(src)?.try_into()?;
 
     let iloc = src.read_into_try_vec()?;
@@ -1859,7 +1855,7 @@ pub fn read_mp4<T: Read>(f: &mut T, context: &mut MediaContext) -> Result<()> {
     }
 }
 
-fn parse_mvhd<T: Read>(f: &mut BMFFBox<T>) -> Result<(MovieHeaderBox, Option<MediaTimeScale>)> {
+fn parse_mvhd<T: Read>(f: &mut BMFFBox<'_, T>) -> Result<(MovieHeaderBox, Option<MediaTimeScale>)> {
     let mvhd = read_mvhd(f)?;
     if mvhd.timescale == 0 {
         return Err(Error::InvalidData("zero timescale in mdhd"));
@@ -1868,7 +1864,7 @@ fn parse_mvhd<T: Read>(f: &mut BMFFBox<T>) -> Result<(MovieHeaderBox, Option<Med
     Ok((mvhd, timescale))
 }
 
-fn read_moov<T: Read>(f: &mut BMFFBox<T>, context: &mut MediaContext) -> Result<()> {
+fn read_moov<T: Read>(f: &mut BMFFBox<'_, T>, context: &mut MediaContext) -> Result<()> {
     let mut iter = f.box_iter();
     while let Some(mut b) = iter.next_box()? {
         match b.head.name {
@@ -1904,7 +1900,7 @@ fn read_moov<T: Read>(f: &mut BMFFBox<T>, context: &mut MediaContext) -> Result<
     Ok(())
 }
 
-fn read_pssh<T: Read>(src: &mut BMFFBox<T>) -> Result<ProtectionSystemSpecificHeaderBox> {
+fn read_pssh<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<ProtectionSystemSpecificHeaderBox> {
     let len = src.bytes_left();
     let mut box_content = read_buf(src, len)?;
     let (system_id, kid, data) = {
@@ -1942,7 +1938,7 @@ fn read_pssh<T: Read>(src: &mut BMFFBox<T>) -> Result<ProtectionSystemSpecificHe
     })
 }
 
-fn read_mvex<T: Read>(src: &mut BMFFBox<T>) -> Result<MovieExtendsBox> {
+fn read_mvex<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<MovieExtendsBox> {
     let mut iter = src.box_iter();
     let mut fragment_duration = None;
     while let Some(mut b) = iter.next_box()? {
@@ -1957,7 +1953,7 @@ fn read_mvex<T: Read>(src: &mut BMFFBox<T>) -> Result<MovieExtendsBox> {
     Ok(MovieExtendsBox { fragment_duration })
 }
 
-fn read_mehd<T: Read>(src: &mut BMFFBox<T>) -> Result<MediaScaledTime> {
+fn read_mehd<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<MediaScaledTime> {
     let (version, _) = read_fullbox_extra(src)?;
     let fragment_duration = match version {
         1 => be_u64(src)?,
@@ -1967,7 +1963,7 @@ fn read_mehd<T: Read>(src: &mut BMFFBox<T>) -> Result<MediaScaledTime> {
     Ok(MediaScaledTime(fragment_duration))
 }
 
-fn read_trak<T: Read>(f: &mut BMFFBox<T>, track: &mut Track) -> Result<()> {
+fn read_trak<T: Read>(f: &mut BMFFBox<'_, T>, track: &mut Track) -> Result<()> {
     let mut iter = f.box_iter();
     while let Some(mut b) = iter.next_box()? {
         match b.head.name {
@@ -1986,7 +1982,7 @@ fn read_trak<T: Read>(f: &mut BMFFBox<T>, track: &mut Track) -> Result<()> {
     Ok(())
 }
 
-fn read_edts<T: Read>(f: &mut BMFFBox<T>, track: &mut Track) -> Result<()> {
+fn read_edts<T: Read>(f: &mut BMFFBox<'_, T>, track: &mut Track) -> Result<()> {
     let mut iter = f.box_iter();
     while let Some(mut b) = iter.next_box()? {
         match b.head.name {
@@ -2029,7 +2025,7 @@ fn read_edts<T: Read>(f: &mut BMFFBox<T>, track: &mut Track) -> Result<()> {
 
 #[allow(clippy::type_complexity)] // Allow the complex return, maybe rework in future
 fn parse_mdhd<T: Read>(
-    f: &mut BMFFBox<T>,
+    f: &mut BMFFBox<'_, T>,
     track: &mut Track,
 ) -> Result<(
     MediaHeaderBox,
@@ -2048,7 +2044,7 @@ fn parse_mdhd<T: Read>(
     Ok((mdhd, duration, timescale))
 }
 
-fn read_mdia<T: Read>(f: &mut BMFFBox<T>, track: &mut Track) -> Result<()> {
+fn read_mdia<T: Read>(f: &mut BMFFBox<'_, T>, track: &mut Track) -> Result<()> {
     let mut iter = f.box_iter();
     while let Some(mut b) = iter.next_box()? {
         match b.head.name {
@@ -2077,7 +2073,7 @@ fn read_mdia<T: Read>(f: &mut BMFFBox<T>, track: &mut Track) -> Result<()> {
     Ok(())
 }
 
-fn read_minf<T: Read>(f: &mut BMFFBox<T>, track: &mut Track) -> Result<()> {
+fn read_minf<T: Read>(f: &mut BMFFBox<'_, T>, track: &mut Track) -> Result<()> {
     let mut iter = f.box_iter();
     while let Some(mut b) = iter.next_box()? {
         match b.head.name {
@@ -2089,7 +2085,7 @@ fn read_minf<T: Read>(f: &mut BMFFBox<T>, track: &mut Track) -> Result<()> {
     Ok(())
 }
 
-fn read_stbl<T: Read>(f: &mut BMFFBox<T>, track: &mut Track) -> Result<()> {
+fn read_stbl<T: Read>(f: &mut BMFFBox<'_, T>, track: &mut Track) -> Result<()> {
     let mut iter = f.box_iter();
     while let Some(mut b) = iter.next_box()? {
         match b.head.name {
@@ -2142,7 +2138,7 @@ fn read_stbl<T: Read>(f: &mut BMFFBox<T>, track: &mut Track) -> Result<()> {
 
 /// Parse an ftyp box.
 /// See ISO 14496-12:2015 § 4.3
-fn read_ftyp<T: Read>(src: &mut BMFFBox<T>) -> Result<FileTypeBox> {
+fn read_ftyp<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<FileTypeBox> {
     let major = be_u32(src)?;
     let minor = be_u32(src)?;
     let bytes_left = src.bytes_left();
@@ -2163,7 +2159,7 @@ fn read_ftyp<T: Read>(src: &mut BMFFBox<T>) -> Result<FileTypeBox> {
 }
 
 /// Parse an mvhd box.
-fn read_mvhd<T: Read>(src: &mut BMFFBox<T>) -> Result<MovieHeaderBox> {
+fn read_mvhd<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<MovieHeaderBox> {
     let (version, _) = read_fullbox_extra(src)?;
     match version {
         // 64 bit creation and modification times.
@@ -2198,7 +2194,7 @@ fn read_mvhd<T: Read>(src: &mut BMFFBox<T>) -> Result<MovieHeaderBox> {
 }
 
 /// Parse a tkhd box.
-fn read_tkhd<T: Read>(src: &mut BMFFBox<T>) -> Result<TrackHeaderBox> {
+fn read_tkhd<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TrackHeaderBox> {
     let (version, flags) = read_fullbox_extra(src)?;
     let disabled = flags & 0x1u32 == 0 || flags & 0x2u32 == 0;
     match version {
@@ -2248,7 +2244,7 @@ fn read_tkhd<T: Read>(src: &mut BMFFBox<T>) -> Result<TrackHeaderBox> {
 
 /// Parse a elst box.
 /// See ISO 14496-12:2015 § 8.6.6
-fn read_elst<T: Read>(src: &mut BMFFBox<T>) -> Result<EditListBox> {
+fn read_elst<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<EditListBox> {
     let (version, _) = read_fullbox_extra(src)?;
     let edit_count = be_u32_with_limit(src)?;
     let mut edits = TryVec::with_capacity(edit_count.to_usize())?;
@@ -2281,7 +2277,7 @@ fn read_elst<T: Read>(src: &mut BMFFBox<T>) -> Result<EditListBox> {
 }
 
 /// Parse a mdhd box.
-fn read_mdhd<T: Read>(src: &mut BMFFBox<T>) -> Result<MediaHeaderBox> {
+fn read_mdhd<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<MediaHeaderBox> {
     let (version, _) = read_fullbox_extra(src)?;
     let (timescale, duration) = match version {
         1 => {
@@ -2324,7 +2320,7 @@ fn read_mdhd<T: Read>(src: &mut BMFFBox<T>) -> Result<MediaHeaderBox> {
 
 /// Parse a stco box.
 /// See ISO 14496-12:2015 § 8.7.5
-fn read_stco<T: Read>(src: &mut BMFFBox<T>) -> Result<ChunkOffsetBox> {
+fn read_stco<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<ChunkOffsetBox> {
     let (_, _) = read_fullbox_extra(src)?;
     let offset_count = be_u32_with_limit(src)?;
     let mut offsets = TryVec::with_capacity(offset_count.to_usize())?;
@@ -2340,7 +2336,7 @@ fn read_stco<T: Read>(src: &mut BMFFBox<T>) -> Result<ChunkOffsetBox> {
 
 /// Parse a co64 box.
 /// See ISO 14496-12:2015 § 8.7.5
-fn read_co64<T: Read>(src: &mut BMFFBox<T>) -> Result<ChunkOffsetBox> {
+fn read_co64<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<ChunkOffsetBox> {
     let (_, _) = read_fullbox_extra(src)?;
     let offset_count = be_u32_with_limit(src)?;
     let mut offsets = TryVec::with_capacity(offset_count.to_usize())?;
@@ -2356,7 +2352,7 @@ fn read_co64<T: Read>(src: &mut BMFFBox<T>) -> Result<ChunkOffsetBox> {
 
 /// Parse a stss box.
 /// See ISO 14496-12:2015 § 8.6.2
-fn read_stss<T: Read>(src: &mut BMFFBox<T>) -> Result<SyncSampleBox> {
+fn read_stss<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<SyncSampleBox> {
     let (_, _) = read_fullbox_extra(src)?;
     let sample_count = be_u32_with_limit(src)?;
     let mut samples = TryVec::with_capacity(sample_count.to_usize())?;
@@ -2372,7 +2368,7 @@ fn read_stss<T: Read>(src: &mut BMFFBox<T>) -> Result<SyncSampleBox> {
 
 /// Parse a stsc box.
 /// See ISO 14496-12:2015 § 8.7.4
-fn read_stsc<T: Read>(src: &mut BMFFBox<T>) -> Result<SampleToChunkBox> {
+fn read_stsc<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<SampleToChunkBox> {
     let (_, _) = read_fullbox_extra(src)?;
     let sample_count = be_u32_with_limit(src)?;
     let mut samples = TryVec::with_capacity(sample_count.to_usize())?;
@@ -2395,7 +2391,7 @@ fn read_stsc<T: Read>(src: &mut BMFFBox<T>) -> Result<SampleToChunkBox> {
 
 /// Parse a Composition Time to Sample Box
 /// See ISO 14496-12:2015 § 8.6.1.3
-fn read_ctts<T: Read>(src: &mut BMFFBox<T>) -> Result<CompositionOffsetBox> {
+fn read_ctts<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<CompositionOffsetBox> {
     let (version, _) = read_fullbox_extra(src)?;
 
     let counts = be_u32_with_limit(src)?;
@@ -2437,7 +2433,7 @@ fn read_ctts<T: Read>(src: &mut BMFFBox<T>) -> Result<CompositionOffsetBox> {
 
 /// Parse a stsz box.
 /// See ISO 14496-12:2015 § 8.7.3.2
-fn read_stsz<T: Read>(src: &mut BMFFBox<T>) -> Result<SampleSizeBox> {
+fn read_stsz<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<SampleSizeBox> {
     let (_, _) = read_fullbox_extra(src)?;
     let sample_size = be_u32(src)?;
     let sample_count = be_u32_with_limit(src)?;
@@ -2460,7 +2456,7 @@ fn read_stsz<T: Read>(src: &mut BMFFBox<T>) -> Result<SampleSizeBox> {
 
 /// Parse a stts box.
 /// See ISO 14496-12:2015 § 8.6.1.2
-fn read_stts<T: Read>(src: &mut BMFFBox<T>) -> Result<TimeToSampleBox> {
+fn read_stts<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TimeToSampleBox> {
     let (_, _) = read_fullbox_extra(src)?;
     let sample_count = be_u32_with_limit(src)?;
     let mut samples = TryVec::with_capacity(sample_count.to_usize())?;
@@ -2480,7 +2476,7 @@ fn read_stts<T: Read>(src: &mut BMFFBox<T>) -> Result<TimeToSampleBox> {
 }
 
 /// Parse a VPx Config Box.
-fn read_vpcc<T: Read>(src: &mut BMFFBox<T>) -> Result<VPxConfigBox> {
+fn read_vpcc<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<VPxConfigBox> {
     let (version, _) = read_fullbox_extra(src)?;
     let supported_versions = [0, 1];
     if !supported_versions.contains(&version) {
@@ -2550,7 +2546,7 @@ fn read_vpcc<T: Read>(src: &mut BMFFBox<T>) -> Result<VPxConfigBox> {
     })
 }
 
-fn read_av1c<T: Read>(src: &mut BMFFBox<T>) -> Result<AV1ConfigBox> {
+fn read_av1c<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<AV1ConfigBox> {
     let marker_byte = src.read_u8()?;
     if marker_byte & 0x80 != 0x80 {
         return Err(Error::Unsupported("missing av1C marker bit"));
@@ -2598,7 +2594,7 @@ fn read_av1c<T: Read>(src: &mut BMFFBox<T>) -> Result<AV1ConfigBox> {
     })
 }
 
-fn read_flac_metadata<T: Read>(src: &mut BMFFBox<T>) -> Result<FLACMetadataBlock> {
+fn read_flac_metadata<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<FLACMetadataBlock> {
     let temp = src.read_u8()?;
     let block_type = temp & 0x7f;
     let length = be_u24(src)?.into();
@@ -2672,7 +2668,7 @@ fn find_descriptor(data: &[u8], esds: &mut ES_Descriptor) -> Result<()> {
     Ok(())
 }
 
-fn get_audio_object_type(bit_reader: &mut BitReader) -> Result<u16> {
+fn get_audio_object_type(bit_reader: &mut BitReader<'_>) -> Result<u16> {
     let mut audio_object_type: u16 = ReadInto::read(bit_reader, 5)?;
 
     // Extend audio object type, for example, HE-AAC.
@@ -2844,7 +2840,7 @@ fn read_ds_descriptor(data: &[u8], esds: &mut ES_Descriptor) -> Result<()> {
     }
 }
 
-fn read_surround_channel_count(bit_reader: &mut BitReader, channels: u8) -> Result<u16> {
+fn read_surround_channel_count(bit_reader: &mut BitReader<'_>, channels: u8) -> Result<u16> {
     let mut count = 0;
     for _ in 0..channels {
         let is_cpe: bool = ReadInto::read(bit_reader, 1)?;
@@ -2904,7 +2900,7 @@ fn read_es_descriptor(data: &[u8], esds: &mut ES_Descriptor) -> Result<()> {
 }
 
 /// See ISO 14496-14:2010 § 6.7.2
-fn read_esds<T: Read>(src: &mut BMFFBox<T>) -> Result<ES_Descriptor> {
+fn read_esds<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<ES_Descriptor> {
     let (_, _) = read_fullbox_extra(src)?;
 
     let esds_array = read_buf(src, src.bytes_left())?;
@@ -2919,7 +2915,7 @@ fn read_esds<T: Read>(src: &mut BMFFBox<T>) -> Result<ES_Descriptor> {
 
 /// Parse `FLACSpecificBox`.
 /// See https://github.com/xiph/flac/blob/master/doc/isoflac.txt §  3.3.2
-fn read_dfla<T: Read>(src: &mut BMFFBox<T>) -> Result<FLACSpecificBox> {
+fn read_dfla<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<FLACSpecificBox> {
     let (version, flags) = read_fullbox_extra(src)?;
     if version != 0 {
         return Err(Error::Unsupported("unknown dfLa (FLAC) version"));
@@ -2949,7 +2945,7 @@ fn read_dfla<T: Read>(src: &mut BMFFBox<T>) -> Result<FLACSpecificBox> {
 }
 
 /// Parse `OpusSpecificBox`.
-fn read_dops<T: Read>(src: &mut BMFFBox<T>) -> Result<OpusSpecificBox> {
+fn read_dops<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<OpusSpecificBox> {
     let version = src.read_u8()?;
     if version != 0 {
         return Err(Error::Unsupported("unknown dOps (Opus) version"));
@@ -3036,7 +3032,7 @@ pub fn serialize_opus_header<W: byteorder::WriteBytesExt + std::io::Write>(
 }
 
 /// Parse `ALACSpecificBox`.
-fn read_alac<T: Read>(src: &mut BMFFBox<T>) -> Result<ALACSpecificBox> {
+fn read_alac<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<ALACSpecificBox> {
     let (version, flags) = read_fullbox_extra(src)?;
     if version != 0 {
         return Err(Error::Unsupported("unknown alac (ALAC) version"));
@@ -3059,7 +3055,7 @@ fn read_alac<T: Read>(src: &mut BMFFBox<T>) -> Result<ALACSpecificBox> {
 }
 
 /// Parse a hdlr box.
-fn read_hdlr<T: Read>(src: &mut BMFFBox<T>) -> Result<HandlerBox> {
+fn read_hdlr<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<HandlerBox> {
     let (_, _) = read_fullbox_extra(src)?;
 
     // Skip uninteresting fields.
@@ -3077,7 +3073,7 @@ fn read_hdlr<T: Read>(src: &mut BMFFBox<T>) -> Result<HandlerBox> {
 }
 
 /// Parse an video description inside an stsd box.
-fn read_video_sample_entry<T: Read>(src: &mut BMFFBox<T>) -> Result<SampleEntry> {
+fn read_video_sample_entry<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<SampleEntry> {
     let name = src.get_header().name;
     let codec_type = match name {
         BoxType::AVCSampleEntry | BoxType::AVC3SampleEntry => CodecType::H264,
@@ -3194,7 +3190,7 @@ fn read_video_sample_entry<T: Read>(src: &mut BMFFBox<T>) -> Result<SampleEntry>
     )
 }
 
-fn read_qt_wave_atom<T: Read>(src: &mut BMFFBox<T>) -> Result<ES_Descriptor> {
+fn read_qt_wave_atom<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<ES_Descriptor> {
     let mut codec_specific = None;
     let mut iter = src.box_iter();
     while let Some(mut b) = iter.next_box()? {
@@ -3212,7 +3208,7 @@ fn read_qt_wave_atom<T: Read>(src: &mut BMFFBox<T>) -> Result<ES_Descriptor> {
 
 /// Parse an audio description inside an stsd box.
 /// See ISO 14496-12:2015 § 12.2.3
-fn read_audio_sample_entry<T: Read>(src: &mut BMFFBox<T>) -> Result<SampleEntry> {
+fn read_audio_sample_entry<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<SampleEntry> {
     let name = src.get_header().name;
 
     // Skip uninteresting fields.
@@ -3346,7 +3342,7 @@ fn read_audio_sample_entry<T: Read>(src: &mut BMFFBox<T>) -> Result<SampleEntry>
 /// Parse a stsd box.
 /// See ISO 14496-12:2015 § 8.5.2
 /// See ISO 14496-14:2010 § 6.7.2
-fn read_stsd<T: Read>(src: &mut BMFFBox<T>, track: &mut Track) -> Result<SampleDescriptionBox> {
+fn read_stsd<T: Read>(src: &mut BMFFBox<'_, T>, track: &mut Track) -> Result<SampleDescriptionBox> {
     let (_, _) = read_fullbox_extra(src)?;
 
     let description_count = be_u32(src)?;
@@ -3387,7 +3383,7 @@ fn read_stsd<T: Read>(src: &mut BMFFBox<T>, track: &mut Track) -> Result<SampleD
     Ok(SampleDescriptionBox { descriptions })
 }
 
-fn read_sinf<T: Read>(src: &mut BMFFBox<T>) -> Result<ProtectionSchemeInfoBox> {
+fn read_sinf<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<ProtectionSchemeInfoBox> {
     let mut sinf = ProtectionSchemeInfoBox::default();
 
     let mut iter = src.box_iter();
@@ -3411,7 +3407,7 @@ fn read_sinf<T: Read>(src: &mut BMFFBox<T>) -> Result<ProtectionSchemeInfoBox> {
     Ok(sinf)
 }
 
-fn read_schi<T: Read>(src: &mut BMFFBox<T>) -> Result<Option<TrackEncryptionBox>> {
+fn read_schi<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<Option<TrackEncryptionBox>> {
     let mut tenc = None;
     let mut iter = src.box_iter();
     while let Some(mut b) = iter.next_box()? {
@@ -3431,7 +3427,7 @@ fn read_schi<T: Read>(src: &mut BMFFBox<T>) -> Result<Option<TrackEncryptionBox>
     Ok(tenc)
 }
 
-fn read_tenc<T: Read>(src: &mut BMFFBox<T>) -> Result<TrackEncryptionBox> {
+fn read_tenc<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TrackEncryptionBox> {
     let (version, _) = read_fullbox_extra(src)?;
 
     // reserved byte
@@ -3471,7 +3467,7 @@ fn read_tenc<T: Read>(src: &mut BMFFBox<T>) -> Result<TrackEncryptionBox> {
     })
 }
 
-fn read_schm<T: Read>(src: &mut BMFFBox<T>) -> Result<SchemeTypeBox> {
+fn read_schm<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<SchemeTypeBox> {
     // Flags can be used to signal presence of URI in the box, but we don't
     // use the URI so don't bother storing the flags.
     let (_, _) = read_fullbox_extra(src)?;
@@ -3486,7 +3482,7 @@ fn read_schm<T: Read>(src: &mut BMFFBox<T>) -> Result<SchemeTypeBox> {
 }
 
 /// Parse a metadata box inside a moov, trak, or mdia box.
-fn read_udta<T: Read>(src: &mut BMFFBox<T>) -> Result<UserdataBox> {
+fn read_udta<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<UserdataBox> {
     let mut iter = src.box_iter();
     let mut udta = UserdataBox { meta: None };
 
@@ -3504,7 +3500,7 @@ fn read_udta<T: Read>(src: &mut BMFFBox<T>) -> Result<UserdataBox> {
 }
 
 /// Parse a metadata box inside a udta box
-fn read_meta<T: Read>(src: &mut BMFFBox<T>) -> Result<MetadataBox> {
+fn read_meta<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<MetadataBox> {
     let (_, _) = read_fullbox_extra(src)?;
     let mut iter = src.box_iter();
     let mut meta = MetadataBox::default();
@@ -3519,7 +3515,7 @@ fn read_meta<T: Read>(src: &mut BMFFBox<T>) -> Result<MetadataBox> {
 }
 
 /// Parse a metadata box inside a udta box
-fn read_ilst<T: Read>(src: &mut BMFFBox<T>, meta: &mut MetadataBox) -> Result<()> {
+fn read_ilst<T: Read>(src: &mut BMFFBox<'_, T>, meta: &mut MetadataBox) -> Result<()> {
     let mut iter = src.box_iter();
     while let Some(mut b) = iter.next_box()? {
         match b.head.name {
@@ -3622,20 +3618,20 @@ fn read_ilst<T: Read>(src: &mut BMFFBox<T>, meta: &mut MetadataBox) -> Result<()
     Ok(())
 }
 
-fn read_ilst_bool_data<T: Read>(src: &mut BMFFBox<T>) -> Result<Option<bool>> {
+fn read_ilst_bool_data<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<Option<bool>> {
     Ok(read_ilst_u8_data(src)?.and_then(|d| Some(d.get(0)? == &1)))
 }
 
-fn read_ilst_string_data<T: Read>(src: &mut BMFFBox<T>) -> Result<Option<TryString>> {
+fn read_ilst_string_data<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<Option<TryString>> {
     read_ilst_u8_data(src)
 }
 
-fn read_ilst_u8_data<T: Read>(src: &mut BMFFBox<T>) -> Result<Option<TryVec<u8>>> {
+fn read_ilst_u8_data<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<Option<TryVec<u8>>> {
     // For all non-covr atoms, there must only be one data atom.
     Ok(read_ilst_multiple_u8_data(src)?.pop())
 }
 
-fn read_ilst_multiple_u8_data<T: Read>(src: &mut BMFFBox<T>) -> Result<TryVec<TryVec<u8>>> {
+fn read_ilst_multiple_u8_data<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<TryVec<u8>>> {
     let mut iter = src.box_iter();
     let mut data = TryVec::new();
     while let Some(mut b) = iter.next_box()? {
@@ -3650,7 +3646,7 @@ fn read_ilst_multiple_u8_data<T: Read>(src: &mut BMFFBox<T>) -> Result<TryVec<Tr
     Ok(data)
 }
 
-fn read_ilst_data<T: Read>(src: &mut BMFFBox<T>) -> Result<TryVec<u8>> {
+fn read_ilst_data<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<u8>> {
     // Skip past the padding bytes
     skip(&mut src.content, src.head.offset)?;
     let size = src.content.limit();

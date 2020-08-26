@@ -10,13 +10,13 @@ use super::Error;
 use super::MediaContext;
 use fallible_collections::TryRead as _;
 
+use self::test_assembler::*;
 use std::convert::TryInto as _;
 use std::io::Cursor;
 use std::io::Read as _;
-extern crate test_assembler;
-use self::test_assembler::*;
+use test_assembler;
 
-use boxes::BoxType;
+use crate::boxes::BoxType;
 
 enum BoxSize {
     Short(u32),
