@@ -15,12 +15,10 @@ license = "MPL-2.0"
 categories = ["multimedia::images"]
 repository = "https://github.com/kornelski/avif-parse"
 readme = "README.md"
+include = ["README.md", "Cargo.toml", "LICENSE", "/src/*.rs", "avif_parse.h"]
 
-# Avoid complaints about trying to package test files.
-exclude = [
-  "*.mp4",
-  "av1-avif/*"
-]
+[lib]
+crate-type = ["rlib", "staticlib"]
 
 [dependencies]
 byteorder = "1.2.1"

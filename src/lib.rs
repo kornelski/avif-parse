@@ -22,6 +22,9 @@ mod macros;
 mod boxes;
 use crate::boxes::{BoxType, FourCC};
 
+/// This crate can be used from C.
+pub mod c_api;
+
 // Unit tests.
 #[cfg(test)]
 mod tests;
