@@ -13,33 +13,29 @@ static AVIF_TEST_DIR: &str = "av1-avif/testFiles";
 
 #[test]
 fn public_avif_primary_item() {
-    let context = &mut avif_parse::AvifContext::new();
     let input = &mut File::open(IMAGE_AVIF).expect("Unknown file");
-    avif_parse::read_avif(input, context).expect("read_avif failed");
+    let context = avif_parse::read_avif(input).expect("read_avif failed");
     assert_eq!(context.primary_item.len(), 6979);
     assert_eq!(context.primary_item[0..4], [0x12, 0x00, 0x0a, 0x0a]);
 }
 
 #[test]
 fn public_avif_primary_item_split_extents() {
-    let context = &mut avif_parse::AvifContext::new();
     let input = &mut File::open(IMAGE_AVIF_EXTENTS).expect("Unknown file");
-    avif_parse::read_avif(input, context).expect("read_avif failed");
+    let context = avif_parse::read_avif(input).expect("read_avif failed");
     assert_eq!(context.primary_item.len(), 4387);
 }
 
 #[test]
 fn public_avif_bug_1655846() {
-    let context = &mut avif_parse::AvifContext::new();
     let input = &mut File::open(IMAGE_AVIF_CORRUPT).expect("Unknown file");
-    assert!(avif_parse::read_avif(input, context).is_err());
+    assert!(avif_parse::read_avif(input).is_err());
 }
 
 #[test]
 fn public_avif_bug_1661347() {
-    let context = &mut avif_parse::AvifContext::new();
     let input = &mut File::open(IMAGE_AVIF_CORRUPT_2).expect("Unknown file");
-    assert!(avif_parse::read_avif(input, context).is_err());
+    assert!(avif_parse::read_avif(input).is_err());
 }
 
 #[test]
@@ -58,8 +54,7 @@ fn public_avif_read_samples() {
             continue; // Remove when public_avif_primary_item_is_grid passes
         }
         println!("parsing {:?}", path);
-        let context = &mut avif_parse::AvifContext::new();
         let input = &mut File::open(path).expect("Unknow file");
-        avif_parse::read_avif(input, context).expect("read_avif failed");
+        let _ = avif_parse::read_avif(input).expect("read_avif failed");
     }
 }

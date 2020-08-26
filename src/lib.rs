@@ -256,20 +256,19 @@ pub(crate) struct AV1ConfigBox {
 }
 
 #[derive(Debug, Default)]
-pub struct AvifContext {
+pub struct AvifData {
+    /// AV1 data for the color channels.
+    ///
     /// The collected data indicated by the `pitm` box, See ISO 14496-12:2015 § 8.11.4
     pub primary_item: TryVec<u8>,
+    /// AV1 data for alpha channel.
+    ///
     /// Associated alpha channel for the primary item, if any
     pub alpha_item: Option<TryVec<u8>>,
     /// If true, divide RGB values by the alpha value.
+    ///
     /// See `prem` in MIAF § 7.3.5.2
     pub premultiplied_alpha: bool,
-}
-
-impl AvifContext {
-    pub fn new() -> Self {
-        Default::default()
-    }
 }
 
 struct AvifMeta {
@@ -634,9 +633,8 @@ fn skip_box_remain<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<()> {
 
 /// Read the contents of an AVIF file
 ///
-/// Metadata is accumulated in the passed-through `AvifContext` struct,
-/// which can be examined later.
-pub fn read_avif<T: Read>(f: &mut T, context: &mut AvifContext) -> Result<()> {
+/// Metadata is accumulated and returned in [`AvifData`] struct,
+pub fn read_avif<T: Read>(f: &mut T) -> Result<AvifData> {
     let mut f = OffsetReader::new(f);
 
     let mut iter = BoxIter::new(&mut f);
@@ -706,6 +704,7 @@ pub fn read_avif<T: Read>(f: &mut T, context: &mut AvifContext) -> Result<()> {
         })
         .next();
 
+    let mut context = AvifData::default();
     context.premultiplied_alpha = alpha_item_id.map_or(false, |alpha_item_id| {
         meta.item_references.iter().any(|iref| {
             iref.from_item_id == meta.primary_item_id
@@ -749,7 +748,7 @@ pub fn read_avif<T: Read>(f: &mut T, context: &mut AvifContext) -> Result<()> {
         }
     }
 
-    Ok(())
+    Ok(context)
 }
 
 /// Parse a metadata box in the context of an AVIF
