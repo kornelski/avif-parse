@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Module for parsing ISO Base Media Format aka video/mp4 streams.
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -54,7 +55,7 @@ impl ToU64 for usize {
 
 /// A trait to indicate a type can be infallibly converted to `usize`.
 /// This should only be implemented for infallible conversions, so only unsigned types are valid.
-pub trait ToUsize {
+pub(crate) trait ToUsize {
     fn to_usize(self) -> usize;
 }
 
@@ -204,7 +205,7 @@ impl From<fallible_collections::TryReserveError> for Error {
 }
 
 /// Result shorthand using our Error enum.
-pub type Result<T> = std::result::Result<T, Error>;
+pub(crate) type Result<T> = std::result::Result<T, Error>;
 
 /// Basic ISO box structure.
 ///
@@ -242,32 +243,32 @@ struct FileTypeBox {
 /// Movie header box 'mvhd'.
 #[derive(Debug)]
 struct MovieHeaderBox {
-    pub timescale: u32,
+    pub(crate) timescale: u32,
     duration: u64,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Matrix {
-    pub a: i32, // 16.16 fix point
-    pub b: i32, // 16.16 fix point
-    pub u: i32, // 2.30 fix point
-    pub c: i32, // 16.16 fix point
-    pub d: i32, // 16.16 fix point
-    pub v: i32, // 2.30 fix point
-    pub x: i32, // 16.16 fix point
-    pub y: i32, // 16.16 fix point
-    pub w: i32, // 2.30 fix point
+pub(crate) struct Matrix {
+    pub(crate) a: i32, // 16.16 fix point
+    pub(crate) b: i32, // 16.16 fix point
+    pub(crate) u: i32, // 2.30 fix point
+    pub(crate) c: i32, // 16.16 fix point
+    pub(crate) d: i32, // 16.16 fix point
+    pub(crate) v: i32, // 2.30 fix point
+    pub(crate) x: i32, // 16.16 fix point
+    pub(crate) y: i32, // 16.16 fix point
+    pub(crate) w: i32, // 2.30 fix point
 }
 
 /// Track header box 'tkhd'
 #[derive(Debug, Clone)]
-pub struct TrackHeaderBox {
+pub(crate) struct TrackHeaderBox {
     track_id: u32,
-    pub disabled: bool,
-    pub duration: u64,
-    pub width: u32,
-    pub height: u32,
-    pub matrix: Matrix,
+    pub(crate) disabled: bool,
+    pub(crate) duration: u64,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) matrix: Matrix,
 }
 
 /// Edit list box 'elst'
@@ -293,64 +294,64 @@ struct MediaHeaderBox {
 
 // Chunk offset box 'stco' or 'co64'
 #[derive(Debug)]
-pub struct ChunkOffsetBox {
-    pub offsets: TryVec<u64>,
+pub(crate) struct ChunkOffsetBox {
+    pub(crate) offsets: TryVec<u64>,
 }
 
 // Sync sample box 'stss'
 #[derive(Debug)]
-pub struct SyncSampleBox {
-    pub samples: TryVec<u32>,
+pub(crate) struct SyncSampleBox {
+    pub(crate) samples: TryVec<u32>,
 }
 
 // Sample to chunk box 'stsc'
 #[derive(Debug)]
-pub struct SampleToChunkBox {
-    pub samples: TryVec<SampleToChunk>,
+pub(crate) struct SampleToChunkBox {
+    pub(crate) samples: TryVec<SampleToChunk>,
 }
 
 #[derive(Debug)]
-pub struct SampleToChunk {
-    pub first_chunk: u32,
-    pub samples_per_chunk: u32,
-    pub sample_description_index: u32,
+pub(crate) struct SampleToChunk {
+    pub(crate) first_chunk: u32,
+    pub(crate) samples_per_chunk: u32,
+    pub(crate) sample_description_index: u32,
 }
 
 // Sample size box 'stsz'
 #[derive(Debug)]
-pub struct SampleSizeBox {
-    pub sample_size: u32,
-    pub sample_sizes: TryVec<u32>,
+pub(crate) struct SampleSizeBox {
+    pub(crate) sample_size: u32,
+    pub(crate) sample_sizes: TryVec<u32>,
 }
 
 // Time to sample box 'stts'
 #[derive(Debug)]
-pub struct TimeToSampleBox {
-    pub samples: TryVec<Sample>,
+pub(crate) struct TimeToSampleBox {
+    pub(crate) samples: TryVec<Sample>,
 }
 
 #[repr(C)]
 #[derive(Debug)]
-pub struct Sample {
-    pub sample_count: u32,
-    pub sample_delta: u32,
+pub(crate) struct Sample {
+    pub(crate) sample_count: u32,
+    pub(crate) sample_delta: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum TimeOffsetVersion {
+pub(crate) enum TimeOffsetVersion {
     Version0(u32),
     Version1(i32),
 }
 
 #[derive(Debug, Clone)]
-pub struct TimeOffset {
-    pub sample_count: u32,
-    pub time_offset: TimeOffsetVersion,
+pub(crate) struct TimeOffset {
+    pub(crate) sample_count: u32,
+    pub(crate) time_offset: TimeOffsetVersion,
 }
 
 #[derive(Debug)]
-pub struct CompositionOffsetBox {
-    pub samples: TryVec<TimeOffset>,
+pub(crate) struct CompositionOffsetBox {
+    pub(crate) samples: TryVec<TimeOffset>,
 }
 
 // Handler reference box 'hdlr'
@@ -361,12 +362,12 @@ struct HandlerBox {
 
 // Sample description box 'stsd'
 #[derive(Debug)]
-pub struct SampleDescriptionBox {
-    pub descriptions: TryVec<SampleEntry>,
+pub(crate) struct SampleDescriptionBox {
+    pub(crate) descriptions: TryVec<SampleEntry>,
 }
 
 #[derive(Debug)]
-pub enum SampleEntry {
+pub(crate) enum SampleEntry {
     Audio(AudioSampleEntry),
     Video(VideoSampleEntry),
     Unknown,
@@ -376,19 +377,19 @@ pub enum SampleEntry {
 /// See ISO 14496-1:2010 § 7.2.6.5
 #[allow(non_camel_case_types)]
 #[derive(Debug, Default)]
-pub struct ES_Descriptor {
-    pub audio_codec: CodecType,
-    pub audio_object_type: Option<u16>,
-    pub extended_audio_object_type: Option<u16>,
-    pub audio_sample_rate: Option<u32>,
-    pub audio_channel_count: Option<u16>,
-    pub codec_esds: TryVec<u8>,
-    pub decoder_specific_data: TryVec<u8>, // Data in DECODER_SPECIFIC_TAG
+pub(crate) struct ES_Descriptor {
+    pub(crate) audio_codec: CodecType,
+    pub(crate) audio_object_type: Option<u16>,
+    pub(crate) extended_audio_object_type: Option<u16>,
+    pub(crate) audio_sample_rate: Option<u32>,
+    pub(crate) audio_channel_count: Option<u16>,
+    pub(crate) codec_esds: TryVec<u8>,
+    pub(crate) decoder_specific_data: TryVec<u8>, // Data in DECODER_SPECIFIC_TAG
 }
 
 #[allow(non_camel_case_types)]
 #[derive(Debug)]
-pub enum AudioCodecSpecific {
+pub(crate) enum AudioCodecSpecific {
     ES_Descriptor(ES_Descriptor),
     FLACSpecificBox(FLACSpecificBox),
     OpusSpecificBox(OpusSpecificBox),
@@ -398,18 +399,18 @@ pub enum AudioCodecSpecific {
 }
 
 #[derive(Debug)]
-pub struct AudioSampleEntry {
-    pub codec_type: CodecType,
+pub(crate) struct AudioSampleEntry {
+    pub(crate) codec_type: CodecType,
     data_reference_index: u16,
-    pub channelcount: u32,
-    pub samplesize: u16,
-    pub samplerate: f64,
-    pub codec_specific: AudioCodecSpecific,
-    pub protection_info: TryVec<ProtectionSchemeInfoBox>,
+    pub(crate) channelcount: u32,
+    pub(crate) samplesize: u16,
+    pub(crate) samplerate: f64,
+    pub(crate) codec_specific: AudioCodecSpecific,
+    pub(crate) protection_info: TryVec<ProtectionSchemeInfoBox>,
 }
 
 #[derive(Debug)]
-pub enum VideoCodecSpecific {
+pub(crate) enum VideoCodecSpecific {
     AVCConfig(TryVec<u8>),
     VPxConfig(VPxConfigBox),
     AV1Config(AV1ConfigBox),
@@ -417,19 +418,19 @@ pub enum VideoCodecSpecific {
 }
 
 #[derive(Debug)]
-pub struct VideoSampleEntry {
-    pub codec_type: CodecType,
+pub(crate) struct VideoSampleEntry {
+    pub(crate) codec_type: CodecType,
     data_reference_index: u16,
-    pub width: u16,
-    pub height: u16,
-    pub codec_specific: VideoCodecSpecific,
-    pub protection_info: TryVec<ProtectionSchemeInfoBox>,
+    pub(crate) width: u16,
+    pub(crate) height: u16,
+    pub(crate) codec_specific: VideoCodecSpecific,
+    pub(crate) protection_info: TryVec<ProtectionSchemeInfoBox>,
 }
 
 /// Represent a Video Partition Codec Configuration 'vpcC' box (aka vp9). The meaning of each
 /// field is covered in detail in "VP Codec ISO Media File Format Binding".
 #[derive(Debug)]
-pub struct VPxConfigBox {
+pub(crate) struct VPxConfigBox {
     /// An integer that specifies the VP codec profile.
     profile: u8,
     /// An integer that specifies a VP codec level all samples conform to the following table.
@@ -437,11 +438,11 @@ pub struct VPxConfigBox {
     level: u8,
     /// An integer that specifies the bit depth of the luma and color components. Valid values
     /// are 8, 10, and 12.
-    pub bit_depth: u8,
+    pub(crate) bit_depth: u8,
     /// Really an enum defined by the "Colour primaries" section of ISO/IEC 23001-8:2016.
-    pub colour_primaries: u8,
+    pub(crate) colour_primaries: u8,
     /// Really an enum defined by "VP Codec ISO Media File Format Binding".
-    pub chroma_subsampling: u8,
+    pub(crate) chroma_subsampling: u8,
     /// Really an enum defined by the "Transfer characteristics" section of ISO/IEC 23001-8:2016.
     transfer_characteristics: u8,
     /// Really an enum defined by the "Matrix coefficients" section of ISO/IEC 23001-8:2016.
@@ -451,35 +452,35 @@ pub struct VPxConfigBox {
     /// (e.g. 16-235 for 8 bit sample depth); 1 = full range (e.g. 0-255 for 8-bit sample depth).
     video_full_range_flag: bool,
     /// This is not used for VP8 and VP9 . Intended for binary codec initialization data.
-    pub codec_init: TryVec<u8>,
+    pub(crate) codec_init: TryVec<u8>,
 }
 
 #[derive(Debug)]
-pub struct AV1ConfigBox {
-    pub profile: u8,
-    pub level: u8,
-    pub tier: u8,
-    pub bit_depth: u8,
-    pub monochrome: bool,
-    pub chroma_subsampling_x: u8,
-    pub chroma_subsampling_y: u8,
-    pub chroma_sample_position: u8,
-    pub initial_presentation_delay_present: bool,
-    pub initial_presentation_delay_minus_one: u8,
-    pub config_obus: TryVec<u8>,
+pub(crate) struct AV1ConfigBox {
+    pub(crate) profile: u8,
+    pub(crate) level: u8,
+    pub(crate) tier: u8,
+    pub(crate) bit_depth: u8,
+    pub(crate) monochrome: bool,
+    pub(crate) chroma_subsampling_x: u8,
+    pub(crate) chroma_subsampling_y: u8,
+    pub(crate) chroma_sample_position: u8,
+    pub(crate) initial_presentation_delay_present: bool,
+    pub(crate) initial_presentation_delay_minus_one: u8,
+    pub(crate) config_obus: TryVec<u8>,
 }
 
 #[derive(Debug)]
-pub struct FLACMetadataBlock {
-    pub block_type: u8,
-    pub data: TryVec<u8>,
+pub(crate) struct FLACMetadataBlock {
+    pub(crate) block_type: u8,
+    pub(crate) data: TryVec<u8>,
 }
 
 /// Represents a FLACSpecificBox 'dfLa'
 #[derive(Debug)]
-pub struct FLACSpecificBox {
+pub(crate) struct FLACSpecificBox {
     version: u8,
-    pub blocks: TryVec<FLACMetadataBlock>,
+    pub(crate) blocks: TryVec<FLACMetadataBlock>,
 }
 
 #[derive(Debug)]
@@ -491,8 +492,8 @@ struct ChannelMappingTable {
 
 /// Represent an OpusSpecificBox 'dOps'
 #[derive(Debug)]
-pub struct OpusSpecificBox {
-    pub version: u8,
+pub(crate) struct OpusSpecificBox {
+    pub(crate) version: u8,
     output_channel_count: u8,
     pre_skip: u16,
     input_sample_rate: u32,
@@ -503,59 +504,59 @@ pub struct OpusSpecificBox {
 
 /// Represent an ALACSpecificBox 'alac'
 #[derive(Debug)]
-pub struct ALACSpecificBox {
+pub(crate) struct ALACSpecificBox {
     version: u8,
-    pub data: TryVec<u8>,
+    pub(crate) data: TryVec<u8>,
 }
 
 #[derive(Debug)]
-pub struct MovieExtendsBox {
-    pub fragment_duration: Option<MediaScaledTime>,
+pub(crate) struct MovieExtendsBox {
+    pub(crate) fragment_duration: Option<MediaScaledTime>,
 }
 
-pub type ByteData = TryVec<u8>;
+pub(crate) type ByteData = TryVec<u8>;
 
 #[derive(Debug, Default)]
-pub struct ProtectionSystemSpecificHeaderBox {
-    pub system_id: ByteData,
-    pub kid: TryVec<ByteData>,
-    pub data: ByteData,
+pub(crate) struct ProtectionSystemSpecificHeaderBox {
+    pub(crate) system_id: ByteData,
+    pub(crate) kid: TryVec<ByteData>,
+    pub(crate) data: ByteData,
 
     // The entire pssh box (include header) required by Gecko.
-    pub box_content: ByteData,
+    pub(crate) box_content: ByteData,
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct SchemeTypeBox {
-    pub scheme_type: FourCC,
-    pub scheme_version: u32,
+pub(crate) struct SchemeTypeBox {
+    pub(crate) scheme_type: FourCC,
+    pub(crate) scheme_version: u32,
 }
 
 #[derive(Debug, Default)]
-pub struct TrackEncryptionBox {
-    pub is_encrypted: u8,
-    pub iv_size: u8,
-    pub kid: TryVec<u8>,
+pub(crate) struct TrackEncryptionBox {
+    pub(crate) is_encrypted: u8,
+    pub(crate) iv_size: u8,
+    pub(crate) kid: TryVec<u8>,
     // Members for pattern encryption schemes
-    pub crypt_byte_block_count: Option<u8>,
-    pub skip_byte_block_count: Option<u8>,
-    pub constant_iv: Option<TryVec<u8>>,
+    pub(crate) crypt_byte_block_count: Option<u8>,
+    pub(crate) skip_byte_block_count: Option<u8>,
+    pub(crate) constant_iv: Option<TryVec<u8>>,
     // End pattern encryption scheme members
 }
 
 #[derive(Debug, Default)]
-pub struct ProtectionSchemeInfoBox {
-    pub original_format: FourCC,
-    pub scheme_type: Option<SchemeTypeBox>,
-    pub tenc: Option<TrackEncryptionBox>,
+pub(crate) struct ProtectionSchemeInfoBox {
+    pub(crate) original_format: FourCC,
+    pub(crate) scheme_type: Option<SchemeTypeBox>,
+    pub(crate) tenc: Option<TrackEncryptionBox>,
 }
 
 /// Represents a userdata box 'udta'.
 /// Currently, only the metadata atom 'meta'
 /// is parsed.
 #[derive(Debug, Default)]
-pub struct UserdataBox {
-    pub meta: Option<MetadataBox>,
+pub(crate) struct UserdataBox {
+    pub(crate) meta: Option<MetadataBox>,
 }
 
 /// Represents possible contents of the
@@ -564,7 +565,7 @@ pub struct UserdataBox {
 /// standard genre box 'gnre' or a custom
 /// genre box '©gen', but never both at once.
 #[derive(Debug, PartialEq)]
-pub enum Genre {
+pub(crate) enum Genre {
     /// A standard ID3v1 numbered genre.
     StandardGenre(u8),
     /// Any custom genre string.
@@ -575,7 +576,7 @@ pub enum Genre {
 /// atom that indicates content types within
 /// iTunes.
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum MediaType {
+pub(crate) enum MediaType {
     /// Movie is stored as 0 in a 'stik' atom.
     Movie, // 0
     /// Normal is stored as 1 in a 'stik' atom.
@@ -599,7 +600,7 @@ pub enum MediaType {
 /// Represents the parental advisory rating on the track,
 /// stored within the 'rtng' atom.
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum AdvisoryRating {
+pub(crate) enum AdvisoryRating {
     /// Clean is always stored as 2 in an 'rtng' atom.
     Clean, // 2
     /// A value of 0 in an 'rtng' atom indicates 'Inoffensive'
@@ -612,130 +613,130 @@ pub enum AdvisoryRating {
 /// a metadata box 'meta', parsed as iTunes metadata using
 /// the conventional tags.
 #[derive(Debug, Default)]
-pub struct MetadataBox {
+pub(crate) struct MetadataBox {
     /// The album name, '©alb'
-    pub album: Option<TryString>,
+    pub(crate) album: Option<TryString>,
     /// The artist name '©art' or '©ART'
-    pub artist: Option<TryString>,
+    pub(crate) artist: Option<TryString>,
     /// The album artist 'aART'
-    pub album_artist: Option<TryString>,
+    pub(crate) album_artist: Option<TryString>,
     /// Track comments '©cmt'
-    pub comment: Option<TryString>,
+    pub(crate) comment: Option<TryString>,
     /// The date or year field '©day'
     ///
     /// This is stored as an arbitrary string,
     /// and may not necessarily be in a valid date
     /// format.
-    pub year: Option<TryString>,
+    pub(crate) year: Option<TryString>,
     /// The track title '©nam'
-    pub title: Option<TryString>,
+    pub(crate) title: Option<TryString>,
     /// The track genre '©gen' or 'gnre'.
-    pub genre: Option<Genre>,
+    pub(crate) genre: Option<Genre>,
     /// The track number 'trkn'.
-    pub track_number: Option<u8>,
+    pub(crate) track_number: Option<u8>,
     /// The disc number 'disk'
-    pub disc_number: Option<u8>,
+    pub(crate) disc_number: Option<u8>,
     /// The total number of tracks on the disc,
     /// stored in 'trkn'
-    pub total_tracks: Option<u8>,
+    pub(crate) total_tracks: Option<u8>,
     /// The total number of discs in the album,
     /// stored in 'disk'
-    pub total_discs: Option<u8>,
+    pub(crate) total_discs: Option<u8>,
     /// The composer of the track '©wrt'
-    pub composer: Option<TryString>,
+    pub(crate) composer: Option<TryString>,
     /// The encoder used to create this track '©too'
-    pub encoder: Option<TryString>,
+    pub(crate) encoder: Option<TryString>,
     /// The encoded-by settingo this track '©enc'
-    pub encoded_by: Option<TryString>,
+    pub(crate) encoded_by: Option<TryString>,
     /// The tempo or BPM of the track 'tmpo'
-    pub beats_per_minute: Option<u8>,
+    pub(crate) beats_per_minute: Option<u8>,
     /// Copyright information of the track 'cprt'
-    pub copyright: Option<TryString>,
+    pub(crate) copyright: Option<TryString>,
     /// Whether or not this track is part of a compilation 'cpil'
-    pub compilation: Option<bool>,
+    pub(crate) compilation: Option<bool>,
     /// The advisory rating of this track 'rtng'
-    pub advisory: Option<AdvisoryRating>,
+    pub(crate) advisory: Option<AdvisoryRating>,
     /// The personal rating of this track, 'rate'.
     ///
     /// This is stored in the box as string data, but
     /// the format is an integer percentage from 0 - 100,
     /// where 100 is displayed as 5 stars out of 5.
-    pub rating: Option<TryString>,
+    pub(crate) rating: Option<TryString>,
     /// The grouping this track belongs to '©grp'
-    pub grouping: Option<TryString>,
+    pub(crate) grouping: Option<TryString>,
     /// The media type of this track 'stik'
-    pub media_type: Option<MediaType>, // stik
+    pub(crate) media_type: Option<MediaType>, // stik
     /// Whether or not this track is a podcast 'pcst'
-    pub podcast: Option<bool>,
+    pub(crate) podcast: Option<bool>,
     /// The category of ths track 'catg'
-    pub category: Option<TryString>,
+    pub(crate) category: Option<TryString>,
     /// The podcast keyword 'keyw'
-    pub keyword: Option<TryString>,
+    pub(crate) keyword: Option<TryString>,
     /// The podcast url 'purl'
-    pub podcast_url: Option<TryString>,
+    pub(crate) podcast_url: Option<TryString>,
     /// The podcast episode GUID 'egid'
-    pub podcast_guid: Option<TryString>,
+    pub(crate) podcast_guid: Option<TryString>,
     /// The description of the track 'desc'
-    pub description: Option<TryString>,
+    pub(crate) description: Option<TryString>,
     /// The long description of the track 'ldes'.
     ///
     /// Unlike other string fields, the long description field
     /// can be longer than 256 characters.
-    pub long_description: Option<TryString>,
+    pub(crate) long_description: Option<TryString>,
     /// The lyrics of the track '©lyr'.
     ///
     /// Unlike other string fields, the lyrics field
     /// can be longer than 256 characters.
-    pub lyrics: Option<TryString>,
+    pub(crate) lyrics: Option<TryString>,
     /// The name of the TV network this track aired on 'tvnn'.
-    pub tv_network_name: Option<TryString>,
+    pub(crate) tv_network_name: Option<TryString>,
     /// The name of the TV Show for this track 'tvsh'.
-    pub tv_show_name: Option<TryString>,
+    pub(crate) tv_show_name: Option<TryString>,
     /// The name of the TV Episode for this track 'tven'.
-    pub tv_episode_name: Option<TryString>,
+    pub(crate) tv_episode_name: Option<TryString>,
     /// The number of the TV Episode for this track 'tves'.
-    pub tv_episode_number: Option<u8>,
+    pub(crate) tv_episode_number: Option<u8>,
     /// The season of the TV Episode of this track 'tvsn'.
-    pub tv_season: Option<u8>,
+    pub(crate) tv_season: Option<u8>,
     /// The date this track was purchased 'purd'.
-    pub purchase_date: Option<TryString>,
+    pub(crate) purchase_date: Option<TryString>,
     /// Whether or not this track supports gapless playback 'pgap'
-    pub gapless_playback: Option<bool>,
+    pub(crate) gapless_playback: Option<bool>,
     /// Any cover artwork attached to this track 'covr'
     ///
     /// 'covr' is unique in that it may contain multiple 'data' sub-entries,
     /// each an image file. Here, each subentry's raw binary data is exposed,
     /// which may contain image data in JPEG or PNG format.
-    pub cover_art: Option<TryVec<TryVec<u8>>>,
+    pub(crate) cover_art: Option<TryVec<TryVec<u8>>>,
     /// The owner of the track 'ownr'
-    pub owner: Option<TryString>,
+    pub(crate) owner: Option<TryString>,
     /// Whether or not this track is HD Video 'hdvd'
-    pub hd_video: Option<bool>,
+    pub(crate) hd_video: Option<bool>,
     /// The name of the track to sort by 'sonm'
-    pub sort_name: Option<TryString>,
+    pub(crate) sort_name: Option<TryString>,
     /// The name of the album to sort by 'soal'
-    pub sort_album: Option<TryString>,
+    pub(crate) sort_album: Option<TryString>,
     /// The name of the artist to sort by 'soar'
-    pub sort_artist: Option<TryString>,
+    pub(crate) sort_artist: Option<TryString>,
     /// The name of the album artist to sort by 'soaa'
-    pub sort_album_artist: Option<TryString>,
+    pub(crate) sort_album_artist: Option<TryString>,
     /// The name of the composer to sort by 'soco'
-    pub sort_composer: Option<TryString>,
+    pub(crate) sort_composer: Option<TryString>,
 }
 
 /// Internal data structures.
 #[derive(Debug, Default)]
-pub struct MediaContext {
-    pub timescale: Option<MediaTimeScale>,
+pub(crate) struct MediaContext {
+    pub(crate) timescale: Option<MediaTimeScale>,
     /// Tracks found in the file.
-    pub tracks: TryVec<Track>,
-    pub mvex: Option<MovieExtendsBox>,
-    pub psshs: TryVec<ProtectionSystemSpecificHeaderBox>,
-    pub userdata: Option<Result<UserdataBox>>,
+    pub(crate) tracks: TryVec<Track>,
+    pub(crate) mvex: Option<MovieExtendsBox>,
+    pub(crate) psshs: TryVec<ProtectionSystemSpecificHeaderBox>,
+    pub(crate) userdata: Option<Result<UserdataBox>>,
 }
 
 impl MediaContext {
-    pub fn new() -> MediaContext {
+    pub(crate) fn new() -> MediaContext {
         Default::default()
     }
 }
@@ -941,7 +942,7 @@ impl ExtentRange {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum TrackType {
+pub(crate) enum TrackType {
     Audio,
     Video,
     Metadata,
@@ -955,7 +956,7 @@ impl Default for TrackType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum CodecType {
+pub(crate) enum CodecType {
     Unknown,
     MP3,
     AAC,
@@ -980,21 +981,21 @@ impl Default for CodecType {
 
 /// The media's global (mvhd) timescale in units per second.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct MediaTimeScale(pub u64);
+pub(crate) struct MediaTimeScale(pub(crate) u64);
 
 /// A time to be scaled by the media's global (mvhd) timescale.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct MediaScaledTime(pub u64);
+pub(crate) struct MediaScaledTime(pub(crate) u64);
 
 /// The track's local (mdhd) timescale.
 /// Members are timescale units per second and the track id.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct TrackTimeScale<T: Num>(pub T, pub usize);
+pub(crate) struct TrackTimeScale<T: Num>(pub(crate) T, pub(crate) usize);
 
 /// A time to be scaled by the track's local (mdhd) timescale.
 /// Members are time in scale units and the track id.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct TrackScaledTime<T>(pub T, pub usize);
+pub(crate) struct TrackScaledTime<T>(pub(crate) T, pub(crate) usize);
 
 impl<T> std::ops::Add for TrackScaledTime<T>
 where
@@ -1008,22 +1009,22 @@ where
 }
 
 #[derive(Debug, Default)]
-pub struct Track {
-    pub id: usize,
-    pub track_type: TrackType,
-    pub empty_duration: Option<MediaScaledTime>,
-    pub media_time: Option<TrackScaledTime<u64>>,
-    pub timescale: Option<TrackTimeScale<u64>>,
-    pub duration: Option<TrackScaledTime<u64>>,
-    pub track_id: Option<u32>,
-    pub tkhd: Option<TrackHeaderBox>, // TODO(kinetik): find a nicer way to export this.
-    pub stsd: Option<SampleDescriptionBox>,
-    pub stts: Option<TimeToSampleBox>,
-    pub stsc: Option<SampleToChunkBox>,
-    pub stsz: Option<SampleSizeBox>,
-    pub stco: Option<ChunkOffsetBox>, // It is for stco or co64.
-    pub stss: Option<SyncSampleBox>,
-    pub ctts: Option<CompositionOffsetBox>,
+pub(crate) struct Track {
+    pub(crate) id: usize,
+    pub(crate) track_type: TrackType,
+    pub(crate) empty_duration: Option<MediaScaledTime>,
+    pub(crate) media_time: Option<TrackScaledTime<u64>>,
+    pub(crate) timescale: Option<TrackTimeScale<u64>>,
+    pub(crate) duration: Option<TrackScaledTime<u64>>,
+    pub(crate) track_id: Option<u32>,
+    pub(crate) tkhd: Option<TrackHeaderBox>, // TODO(kinetik): find a nicer way to export this.
+    pub(crate) stsd: Option<SampleDescriptionBox>,
+    pub(crate) stts: Option<TimeToSampleBox>,
+    pub(crate) stsc: Option<SampleToChunkBox>,
+    pub(crate) stsz: Option<SampleSizeBox>,
+    pub(crate) stco: Option<ChunkOffsetBox>, // It is for stco or co64.
+    pub(crate) stss: Option<SyncSampleBox>,
+    pub(crate) ctts: Option<CompositionOffsetBox>,
 }
 
 impl Track {
@@ -1325,7 +1326,7 @@ pub fn read_avif<T: Read>(f: &mut T, context: &mut AvifContext) -> Result<()> {
                 return Err(Error::InvalidData(
                     "iloc contains an extent that is not in mdat",
                 ));
-            }
+        }
         }
     }
 
@@ -1571,7 +1572,7 @@ fn read_iprp<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<AssociatedPrope
 }
 
 #[derive(Debug, PartialEq)]
-pub enum ImageProperty {
+pub(crate) enum ImageProperty {
     Channels(TryVec<u8>),
     AuxiliaryType(TryString),
     Unsupported,
@@ -1592,9 +1593,9 @@ struct Association {
     property_index: u16,
 }
 
-pub struct AssociatedProperty {
-    pub item_id: u32,
-    pub property: ImageProperty,
+pub(crate) struct AssociatedProperty {
+    pub(crate) item_id: u32,
+    pub(crate) property: ImageProperty,
 }
 
 fn read_ipma<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<Association>> {
@@ -1798,7 +1799,7 @@ fn read_iloc<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<ItemLocationBox
 ///
 /// Metadata is accumulated in the passed-through `MediaContext` struct,
 /// which can be examined later.
-pub fn read_mp4<T: Read>(f: &mut T, context: &mut MediaContext) -> Result<()> {
+pub(crate) fn read_mp4<T: Read>(f: &mut T, context: &mut MediaContext) -> Result<()> {
     let mut found_ftyp = false;
     let mut found_moov = false;
     // TODO(kinetik): Top-level parsing should handle zero-sized boxes
@@ -2989,7 +2990,7 @@ fn read_dops<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<OpusSpecificBox> {
 /// Ogg and WebM encapsulations. To support this we prepend the `OpusHead`
 /// tag and byte-swap the data from big- to little-endian relative to the
 /// dOps box.
-pub fn serialize_opus_header<W: byteorder::WriteBytesExt + std::io::Write>(
+pub(crate) fn serialize_opus_header<W: byteorder::WriteBytesExt + std::io::Write>(
     opus: &OpusSpecificBox,
     dst: &mut W,
 ) -> Result<()> {
