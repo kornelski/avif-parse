@@ -799,7 +799,7 @@ fn read_avif_meta<T: Read + Offset>(src: &mut BMFFBox<'_, T>) -> Result<AvifMeta
                 primary_item_id = Some(read_pitm(&mut b)?);
             }
             BoxType::ImageReferenceBox => {
-                item_references = read_iref(&mut b)?;
+                item_references.append(&mut read_iref(&mut b)?)?;
             }
             BoxType::ImagePropertiesBox => {
                 properties = read_iprp(&mut b)?;
