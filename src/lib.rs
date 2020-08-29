@@ -693,7 +693,7 @@ pub fn read_avif<T: Read>(f: &mut T) -> Result<AvifData> {
         })
         .map(|iref| iref.from_item_id)
         // which has the alpha property
-        .filter(|&item_id| {
+        .find(|&item_id| {
             meta.properties.iter().any(|prop| {
                 prop.item_id == item_id
                     && match &prop.property {
@@ -704,8 +704,7 @@ pub fn read_avif<T: Read>(f: &mut T) -> Result<AvifData> {
                         _ => false,
                     }
             })
-        })
-        .next();
+        });
 
     let mut context = AvifData::default();
     context.premultiplied_alpha = alpha_item_id.map_or(false, |alpha_item_id| {
