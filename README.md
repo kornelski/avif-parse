@@ -1,4 +1,4 @@
-# AVIF file structure parser
+# AVIF file structure parser (demuxer)
 
 Get AV1 payload and alpha channel metadata out of AVIF image files. The parser is a fork of Mozilla's MP4 parser used in Firefox, so it's designed to be robust and safely handle untrusted data.
 
