@@ -1,6 +1,6 @@
 [package]
 name = "avif-parse"
-version = "0.13.0"
+version = "0.13.1"
 authors = [
   "Ralph Giles <giles@mozilla.com>",
   "Matthew Gregan <kinetik@flim.org>",
@@ -22,14 +22,14 @@ keywords = ["demuxer", "image", "parser", "heif"]
 crate-type = ["rlib", "staticlib"]
 
 [dependencies]
-byteorder = "1.2.1"
-bitreader = { version = "0.3.2" }
-log = "0.4"
+byteorder = "1.4.2"
+bitreader = "0.3.3"
+log = "0.4.14"
 static_assertions = "1.1.0"
-fallible_collections = { version = "0.1.3", features = ["std_io"] }
+fallible_collections = { version = "0.4.0", features = ["std_io"] }
 
 [dev-dependencies]
-env_logger = "0.7.1"
+env_logger = "0.8.2"
 walkdir = "2.3.1"
 
 [features]
