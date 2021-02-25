@@ -14,10 +14,10 @@ struct HashMap;
 struct String;
 
 macro_rules! box_database {
-    ($($boxenum:ident $boxtype:expr),*,) => {
+    ($($(#[$attr:meta])* $boxenum:ident $boxtype:expr),*,) => {
         #[derive(Clone, Copy, PartialEq)]
         pub enum BoxType {
-            $($boxenum),*,
+            $($(#[$attr])* $boxenum),*,
             UnknownBox(u32),
         }
 
@@ -25,7 +25,7 @@ macro_rules! box_database {
             fn from(t: u32) -> BoxType {
                 use self::BoxType::*;
                 match t {
-                    $($boxtype => $boxenum),*,
+                    $($(#[$attr])* $boxtype => $boxenum),*,
                     _ => UnknownBox(t),
                 }
             }
@@ -35,7 +35,7 @@ macro_rules! box_database {
             fn into(self) -> u32 {
                 use self::BoxType::*;
                 match self {
-                    $($boxenum => $boxtype),*,
+                    $($(#[$attr])* $boxenum => $boxtype),*,
                     UnknownBox(t) => t,
                 }
             }
