@@ -718,7 +718,7 @@ pub fn read_avif<T: Read>(f: &mut T) -> Result<AvifData> {
 
     // load data of relevant items
     for loc in meta.iloc_items.iter() {
-        let mut item_data = if loc.item_id == meta.primary_item_id {
+        let item_data = if loc.item_id == meta.primary_item_id {
             &mut context.primary_item
         } else if Some(loc.item_id) == alpha_item_id {
             context.alpha_item.get_or_insert_with(TryVec::new)
@@ -738,7 +738,7 @@ pub fn read_avif<T: Read>(f: &mut T) -> Result<AvifData> {
                     found = true;
                     break;
                 } else if mdat.contains_extent(&extent.extent_range) {
-                    mdat.read_extent(&extent.extent_range, &mut item_data)?;
+                    mdat.read_extent(&extent.extent_range, item_data)?;
                     found = true;
                     break;
                 }
@@ -1083,7 +1083,7 @@ fn read_pixi<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<u8>> {
     let mut channels = TryVec::with_capacity(num_channels)?;
     let num_channels_read = src.try_read_to_end(&mut channels)?;
 
-    if num_channels_read != num_channels.into() {
+    if num_channels_read != num_channels {
         return Err(Error::InvalidData("invalid num_channels"));
     }
 
@@ -1123,7 +1123,7 @@ fn read_auxc<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<AuxiliaryTypeProperty>
     } else {
         aux_type = aux;
         aux_subtype = TryVec::new();
-        }
+    }
 
     Ok(AuxiliaryTypeProperty {
         aux_type,
