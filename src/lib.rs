@@ -222,6 +222,7 @@ struct BoxHeader {
     /// Offset to the start of the contained data (or header size).
     offset: u64,
     /// Uuid for extended type.
+    #[allow(unused)]
     uuid: Option<[u8; 16]>,
 }
 
@@ -232,6 +233,7 @@ impl BoxHeader {
 
 /// File type box 'ftyp'.
 #[derive(Debug)]
+#[allow(unused)]
 struct FileTypeBox {
     major_brand: FourCC,
     minor_version: u32,
@@ -240,11 +242,13 @@ struct FileTypeBox {
 
 // Handler reference box 'hdlr'
 #[derive(Debug)]
+#[allow(unused)]
 struct HandlerBox {
     handler_type: FourCC,
 }
 
 #[derive(Debug)]
+#[allow(unused)]
 pub(crate) struct AV1ConfigBox {
     pub(crate) profile: u8,
     pub(crate) level: u8,
@@ -1017,6 +1021,7 @@ impl TryClone for ItemProperty {
 
 struct Association {
     item_id: u32,
+    #[allow(unused)]
     essential: bool,
     property_index: u16,
 }
