@@ -22,15 +22,15 @@ keywords = ["demuxer", "image", "parser", "heif"]
 crate-type = ["rlib", "staticlib"]
 
 [dependencies]
-byteorder = "1.4.3"
-bitreader = "0.3.5"
-log = "0.4.14"
+byteorder = "1.5.0"
+bitreader = "0.3.8"
+log = "0.4.20"
 static_assertions = "1.1.0"
 fallible_collections = { version = "0.4.4", features = ["std_io"] }
 
 [dev-dependencies]
-env_logger = "0.9.0"
-walkdir = "2.3.2"
+env_logger = "0.11"
+walkdir = "2.4.0"
 
 [features]
 # Enable mp4parse_fallible to use fallible memory allocation rather than
