@@ -70,9 +70,9 @@ impl SequenceHeaderObu {
                 return Err(Error::Unsupported("timing_info_present_flag"));
             }
             let initial_display_delay_present_flag = b.read_bool()?;
-            let operating_points_cnt_minus_1 = b.read_u8(5)?;
+            let operating_points_cnt = 1 + b.read_u8(5)?;
 
-            for _ in 0..=operating_points_cnt_minus_1 {
+            for _ in 0..operating_points_cnt {
                 let operating_point_idc = b.read_u16(12)?;
                 let seq_level_idx = b.read_u8(5)?;
                 let seq_tier = if seq_level_idx > 7 { b.read_bool()? } else { false };
@@ -85,7 +85,7 @@ impl SequenceHeaderObu {
                 if initial_display_delay_present_flag {
                     let initial_display_delay_present_for_this_op = b.read_bool()?;
                     if initial_display_delay_present_for_this_op {
-                        let initial_display_delay_minus_1 = b.read_u8(4)?;
+                        let initial_display_delay = 1 + b.read_u8(4)?;
                     }
                 }
             }
@@ -102,84 +102,84 @@ impl SequenceHeaderObu {
         let max_frame_width = NonZeroU32::new(max_frame_width).ok_or(Error::InvalidData("overflow"))?;
         let max_frame_height = NonZeroU32::new(max_frame_height).ok_or(Error::InvalidData("overflow"))?;
 
-    let frame_id_numbers_present_flag = if reduced_still_picture_header { false } else { b.read_bool()? };
-    let delta_frame_id_length = if frame_id_numbers_present_flag { 2 + b.read_u8(4)? } else { 0 };
-    let additional_frame_id_length = if frame_id_numbers_present_flag { 1 + b.read_u8(3)? } else { 0 };
+        let frame_id_numbers_present_flag = if reduced_still_picture_header { false } else { b.read_bool()? };
+        let delta_frame_id_length = if frame_id_numbers_present_flag { 2 + b.read_u8(4)? } else { 0 };
+        let additional_frame_id_length = if frame_id_numbers_present_flag { 1 + b.read_u8(3)? } else { 0 };
 
-    let use_128x128_superblock = b.read_bool()?;
-    let enable_filter_intra = b.read_bool()?;
-    let enable_intra_edge_filter = b.read_bool()?;
+        let use_128x128_superblock = b.read_bool()?;
+        let enable_filter_intra = b.read_bool()?;
+        let enable_intra_edge_filter = b.read_bool()?;
 
-    let mut enable_interintra_compound = false;
-    let mut enable_masked_compound = false;
-    let mut enable_warped_motion = false;
-    let mut enable_dual_filter = false;
-    let mut enable_jnt_comp = false;
-    let mut enable_ref_frame_mvs = false;
-    let mut seq_force_screen_content_tools = SELECT_SCREEN_CONTENT_TOOLS;
-    let mut seq_force_integer_mv = SELECT_INTEGER_MV;
-    let mut order_hint_bits = 0;
-    let mut enable_order_hint = false;
+        let mut enable_interintra_compound = false;
+        let mut enable_masked_compound = false;
+        let mut enable_warped_motion = false;
+        let mut enable_dual_filter = false;
+        let mut enable_jnt_comp = false;
+        let mut enable_ref_frame_mvs = false;
+        let mut seq_force_screen_content_tools = SELECT_SCREEN_CONTENT_TOOLS;
+        let mut seq_force_integer_mv = SELECT_INTEGER_MV;
+        let mut order_hint_bits = 0;
+        let mut enable_order_hint = false;
 
-    if !reduced_still_picture_header {
-        enable_interintra_compound = b.read_bool()?;
-        enable_masked_compound = b.read_bool()?;
-        enable_warped_motion = b.read_bool()?;
-        enable_dual_filter = b.read_bool()?;
-        enable_order_hint = b.read_bool()?;
-        if enable_order_hint {
-            enable_jnt_comp = b.read_bool()?;
-            enable_ref_frame_mvs = b.read_bool()?;
-        }
-        let seq_choose_screen_content_tools = b.read_bool()?;
-        if !seq_choose_screen_content_tools {
-            seq_force_screen_content_tools = b.read_u8(1)?;
-        }
+        if !reduced_still_picture_header {
+            enable_interintra_compound = b.read_bool()?;
+            enable_masked_compound = b.read_bool()?;
+            enable_warped_motion = b.read_bool()?;
+            enable_dual_filter = b.read_bool()?;
+            enable_order_hint = b.read_bool()?;
+            if enable_order_hint {
+                enable_jnt_comp = b.read_bool()?;
+                enable_ref_frame_mvs = b.read_bool()?;
+            }
+            let seq_choose_screen_content_tools = b.read_bool()?;
+            if !seq_choose_screen_content_tools {
+                seq_force_screen_content_tools = b.read_u8(1)?;
+            }
 
-        if seq_force_screen_content_tools > 0 {
-            let seq_choose_integer_mv = b.read_bool()?;
-            if !seq_choose_integer_mv {
-                seq_force_integer_mv = b.read_u8(1)?;
+            if seq_force_screen_content_tools > 0 {
+                let seq_choose_integer_mv = b.read_bool()?;
+                if !seq_choose_integer_mv {
+                    seq_force_integer_mv = b.read_u8(1)?;
+                }
+            }
+            if enable_order_hint {
+                order_hint_bits = 1 + b.read_u8(3)?;
             }
         }
-        if enable_order_hint {
-            let order_hint_bits_minus_1 = b.read_u8(3)?;
-            order_hint_bits = order_hint_bits_minus_1 + 1;
-        }
-    }
-    let enable_superres = b.read_bool()?;
-    let enable_cdef = b.read_bool()?;
-    let enable_restoration = b.read_bool()?;
-    let color = color_config(&mut b, seq_profile)?;
-    let film_grain_params_present = b.read_bool()?;
+        let enable_superres = b.read_bool()?;
+        let enable_cdef = b.read_bool()?;
+        let enable_restoration = b.read_bool()?;
+        let color = color_config(&mut b, seq_profile)?;
+        let film_grain_params_present = b.read_bool()?;
 
-    Ok(SequenceHeaderObu {
-        color,
-        seq_profile,
-        still_picture,
-        reduced_still_picture_header,
-        max_frame_width,
-        max_frame_height,
-        enable_superres,
-        enable_cdef,
-        enable_restoration,
-        frame_id_numbers_present_flag,
-        delta_frame_id_length,
-        additional_frame_id_length,
-        film_grain_params_present,
-        decoder_model_info_present_flag,
-        seq_force_screen_content_tools,
-        seq_force_integer_mv,
-        order_hint_bits,
-        enable_order_hint,
-        use_128x128_superblock,
-        enable_interintra_compound,
-        enable_masked_compound,
-        enable_warped_motion,
-        enable_dual_filter,
-        enable_jnt_comp,
-        enable_ref_frame_mvs,
-    })
+        Ok(Self {
+            color,
+            seq_profile,
+            still_picture,
+            reduced_still_picture_header,
+            max_frame_width,
+            max_frame_height,
+            enable_superres,
+            enable_cdef,
+            enable_restoration,
+            frame_id_numbers_present_flag,
+            delta_frame_id_length,
+            additional_frame_id_length,
+            film_grain_params_present,
+            decoder_model_info_present_flag,
+            seq_force_screen_content_tools,
+            seq_force_integer_mv,
+            order_hint_bits,
+            enable_order_hint,
+            use_128x128_superblock,
+            enable_interintra_compound,
+            enable_masked_compound,
+            enable_warped_motion,
+            enable_dual_filter,
+            enable_jnt_comp,
+            enable_ref_frame_mvs,
+        })
+    }
 }
 
 #[derive(Debug, Clone)]

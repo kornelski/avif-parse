@@ -38,7 +38,7 @@ trait ToU64 {
 
 /// Statically verify that the platform `usize` can fit within a `u64`.
 /// If the size won't fit on the given platform, this will fail at compile time, but if a type
-/// which can fail TryInto<usize> is used, it may panic.
+/// which can fail `TryInto<usize>` is used, it may panic.
 impl ToU64 for usize {
     fn to_u64(self) -> u64 {
         static_assertions::const_assert!(std::mem::size_of::<usize>() <= std::mem::size_of::<u64>());
@@ -54,7 +54,7 @@ pub(crate) trait ToUsize {
 
 /// Statically verify that the given type can fit within a `usize`.
 /// If the size won't fit on the given platform, this will fail at compile time, but if a type
-/// which can fail TryInto<usize> is used, it may panic.
+/// which can fail `TryInto<usize>` is used, it may panic.
 macro_rules! impl_to_usize_from {
     ( $from_type:ty ) => {
         impl ToUsize for $from_type {
@@ -158,7 +158,7 @@ impl std::error::Error for Error {}
 impl From<bitreader::BitReaderError> for Error {
     #[cold]
     #[cfg_attr(debug_assertions, track_caller)]
-    fn from(err: bitreader::BitReaderError) -> Error {
+    fn from(err: bitreader::BitReaderError) -> Self {
         log::warn!("bitreader: {err}");
         debug_assert!(!matches!(err, bitreader::BitReaderError::TooManyBitsForType { .. })); // bug
         Self::InvalidData("truncated bits")
@@ -166,23 +166,23 @@ impl From<bitreader::BitReaderError> for Error {
 }
 
 impl From<std::io::Error> for Error {
-    fn from(err: std::io::Error) -> Error {
+    fn from(err: std::io::Error) -> Self {
         match err.kind() {
-            std::io::ErrorKind::UnexpectedEof => Error::UnexpectedEOF,
-            _ => Error::Io(err),
+            std::io::ErrorKind::UnexpectedEof => Self::UnexpectedEOF,
+            _ => Self::Io(err),
         }
     }
 }
 
 impl From<std::string::FromUtf8Error> for Error {
-    fn from(_: std::string::FromUtf8Error) -> Error {
-        Error::InvalidData("invalid utf8")
+    fn from(_: std::string::FromUtf8Error) -> Self {
+        Self::InvalidData("invalid utf8")
     }
 }
 
 impl From<std::num::TryFromIntError> for Error {
-    fn from(_: std::num::TryFromIntError) -> Error {
-        Error::Unsupported("integer conversion failed")
+    fn from(_: std::num::TryFromIntError) -> Self {
+        Self::Unsupported("integer conversion failed")
     }
 }
 
@@ -199,8 +199,8 @@ impl From<Error> for std::io::Error {
 }
 
 impl From<TryReserveError> for Error {
-    fn from(_: TryReserveError) -> Error {
-        Error::OutOfMemory
+    fn from(_: TryReserveError) -> Self {
+        Self::OutOfMemory
     }
 }
 
