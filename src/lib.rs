@@ -43,7 +43,7 @@ impl ToU64 for usize {
         static_assertions::const_assert!(
             std::mem::size_of::<usize>() <= std::mem::size_of::<u64>()
         );
-        self.try_into().expect("usize -> u64 conversion failed")
+        self.try_into().ok().unwrap()
     }
 }
 
@@ -63,10 +63,7 @@ macro_rules! impl_to_usize_from {
                 static_assertions::const_assert!(
                     std::mem::size_of::<$from_type>() <= std::mem::size_of::<usize>()
                 );
-                self.try_into().expect(concat!(
-                    stringify!($from_type),
-                    " -> usize conversion failed"
-                ))
+                self.try_into().ok().unwrap()
             }
         }
     };
@@ -105,7 +102,7 @@ impl<'a, T: Read> Read for OffsetReader<'a, T> {
         self.offset = self
             .offset
             .checked_add(bytes_read.to_u64())
-            .expect("total bytes read too large for offset type");
+            .ok_or(Error::Unsupported("total bytes read too large for offset type"))?;
         Ok(bytes_read)
     }
 }
@@ -147,15 +144,27 @@ pub enum Error {
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        let msg = match self {
+            Self::InvalidData(s) |
+            Self::Unsupported(s) => s,
+            Self::UnexpectedEOF => "EOF",
+            Self::Io(err) => return err.fmt(f),
+            Self::NoMoov => "Missing Moov box",
+            Self::OutOfMemory => "OOM",
+        };
+        f.write_str(msg)
     }
 }
 
 impl std::error::Error for Error {}
 
 impl From<bitreader::BitReaderError> for Error {
-    fn from(_: bitreader::BitReaderError) -> Error {
-        Error::InvalidData("invalid data")
+    #[cold]
+    #[cfg_attr(debug_assertions, track_caller)]
+    fn from(err: bitreader::BitReaderError) -> Error {
+        log::warn!("bitreader: {err}");
+        debug_assert!(!matches!(err, bitreader::BitReaderError::TooManyBitsForType { .. })); // bug
+        return Error::InvalidData("truncated bits");
     }
 }
 
@@ -327,16 +336,16 @@ impl MediaDataBox {
         let start_offset = extent
             .start()
             .checked_sub(self.offset)
-            .expect("mdat does not contain extent");
+            .ok_or(Error::InvalidData("mdat does not contain extent"))?;
         let slice = match extent {
             ExtentRange::WithLength(range) => {
                 let range_len = range
                     .end
                     .checked_sub(range.start)
-                    .expect("range start > end");
+                    .ok_or(Error::InvalidData("range start > end"))?;
                 let end = start_offset
                     .checked_add(range_len)
-                    .expect("extent end overflow");
+                    .ok_or(Error::InvalidData("extent end overflow"))?;
                 self.data.get(start_offset.try_into()?..end.try_into()?)
             }
             ExtentRange::ToEnd(_) => self.data.get(start_offset.try_into()?..),
@@ -618,7 +627,7 @@ fn skip_box_content<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<()> {
         header
             .size
             .checked_sub(header.offset)
-            .expect("header offset > size")
+            .ok_or(Error::InvalidData("header offset > size"))?
     };
     assert_eq!(to_skip, src.bytes_left());
     skip(src, to_skip)
@@ -648,6 +657,10 @@ pub fn read_avif<T: Read>(f: &mut T) -> Result<AvifData> {
         if b.head.name == BoxType::FileTypeBox {
             let ftyp = read_ftyp(&mut b)?;
             if ftyp.major_brand != b"avif" {
+                if ftyp.major_brand == b"avis" {
+                    return Err(Error::Unsupported("Animated AVIF is not supported. Please use real AV1 videos instead."));
+                }
+                warn!("major_brand: {}", ftyp.major_brand);
                 return Err(Error::InvalidData("ftyp must be 'avif'"));
             }
         } else {
@@ -820,6 +833,9 @@ fn read_avif_meta<T: Read + Offset>(src: &mut BMFFBox<'_, T>) -> Result<AvifMeta
 
     if let Some(item_info) = item_infos.iter().find(|x| x.item_id == primary_item_id) {
         if &item_info.item_type.to_be_bytes() != b"av01" {
+            if &item_info.item_type.to_be_bytes() == b"grid" {
+                return Err(Error::Unsupported("Grid-based AVIF collage is not supported"));
+            }
             warn!("primary_item_id type: {}", U32BE(item_info.item_type));
             return Err(Error::InvalidData("primary_item_id type is not av01"));
         }
