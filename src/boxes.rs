@@ -33,10 +33,10 @@ macro_rules! box_database {
         }
 
         #[deny(unreachable_patterns)]
-        impl Into<u32> for BoxType {
-            fn into(self) -> u32 {
+        impl From<BoxType> for u32 {
+            fn from(box_type: BoxType) -> u32 {
                 use self::BoxType::*;
-                match self {
+                match box_type {
                     $($(#[$attr])* $boxenum => $boxtype),*,
                     UnknownBox(t) => t,
                 }
@@ -58,23 +58,21 @@ pub struct FourCC {
 }
 
 impl From<u32> for FourCC {
-    fn from(number: u32) -> FourCC {
-        FourCC {
-            value: number.to_be_bytes(),
-        }
+    fn from(number: u32) -> Self {
+        Self { value: number.to_be_bytes() }
     }
 }
 
 impl From<BoxType> for FourCC {
-    fn from(t: BoxType) -> FourCC {
+    fn from(t: BoxType) -> Self {
         let box_num: u32 = Into::into(t);
         From::from(box_num)
     }
 }
 
 impl From<[u8; 4]> for FourCC {
-    fn from(v: [u8; 4]) -> FourCC {
-        FourCC { value: v }
+    fn from(v: [u8; 4]) -> Self {
+        Self { value: v }
     }
 }
 

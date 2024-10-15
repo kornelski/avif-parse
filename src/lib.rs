@@ -8,9 +8,7 @@ use log::{debug, warn};
 
 use bitreader::BitReader;
 use byteorder::ReadBytesExt;
-use fallible_collections::TryClone;
-use fallible_collections::TryRead;
-use fallible_collections::TryReserveError;
+use fallible_collections::{TryClone, TryRead, TryReserveError};
 use std::convert::{TryFrom, TryInto as _};
 
 use std::io::{Read, Take};
@@ -43,9 +41,7 @@ trait ToU64 {
 /// which can fail TryInto<usize> is used, it may panic.
 impl ToU64 for usize {
     fn to_u64(self) -> u64 {
-        static_assertions::const_assert!(
-            std::mem::size_of::<usize>() <= std::mem::size_of::<u64>()
-        );
+        static_assertions::const_assert!(std::mem::size_of::<usize>() <= std::mem::size_of::<u64>());
         self.try_into().ok().unwrap()
     }
 }
@@ -63,9 +59,7 @@ macro_rules! impl_to_usize_from {
     ( $from_type:ty ) => {
         impl ToUsize for $from_type {
             fn to_usize(self) -> usize {
-                static_assertions::const_assert!(
-                    std::mem::size_of::<$from_type>() <= std::mem::size_of::<usize>()
-                );
+                static_assertions::const_assert!(std::mem::size_of::<$from_type>() <= std::mem::size_of::<usize>());
                 self.try_into().ok().unwrap()
             }
         }
@@ -93,13 +87,13 @@ impl<'a, T> OffsetReader<'a, T> {
     }
 }
 
-impl<'a, T> Offset for OffsetReader<'a, T> {
+impl<T> Offset for OffsetReader<'_, T> {
     fn offset(&self) -> u64 {
         self.offset
     }
 }
 
-impl<'a, T: Read> Read for OffsetReader<'a, T> {
+impl<T: Read> Read for OffsetReader<'_, T> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let bytes_read = self.reader.read(buf)?;
         self.offset = self
@@ -139,7 +133,7 @@ pub enum Error {
     UnexpectedEOF,
     /// Propagate underlying errors from `std::io`.
     Io(std::io::Error),
-    /// read_mp4 terminated without detecting a moov box.
+    /// `read_mp4` terminated without detecting a moov box.
     NoMoov,
     /// Out of memory
     OutOfMemory,
@@ -167,7 +161,7 @@ impl From<bitreader::BitReaderError> for Error {
     fn from(err: bitreader::BitReaderError) -> Error {
         log::warn!("bitreader: {err}");
         debug_assert!(!matches!(err, bitreader::BitReaderError::TooManyBitsForType { .. })); // bug
-        return Error::InvalidData("truncated bits");
+        Self::InvalidData("truncated bits")
     }
 }
 
@@ -328,7 +322,7 @@ struct AvifInternalMeta {
 /// A Media Data Box
 /// See ISO 14496-12:2015 § 8.1.1
 struct MediaDataBox {
-    /// Offset of `data` from the beginning of the file. See ConstructionMethod::File
+    /// Offset of `data` from the beginning of the file. See `ConstructionMethod::File`
     offset: u64,
     data: TryVec<u8>,
 }
@@ -356,7 +350,7 @@ impl MediaDataBox {
                     } else {
                         false
                     }
-                }
+                },
                 ExtentRange::ToEnd(_) => true,
             }
         } else {
@@ -366,7 +360,7 @@ impl MediaDataBox {
 
     /// Copy the range specified by `extent` to the end of `buf` or return an error if the range
     /// is not fully contained within `MediaDataBox`.
-    fn read_extent(&mut self, extent: &ExtentRange, buf: &mut TryVec<u8>) -> Result<()> {
+    fn read_extent(&self, extent: &ExtentRange, buf: &mut TryVec<u8>) -> Result<()> {
         let start_offset = extent
             .start()
             .checked_sub(self.offset)
@@ -381,7 +375,7 @@ impl MediaDataBox {
                     .checked_add(range_len)
                     .ok_or(Error::InvalidData("extent end overflow"))?;
                 self.data.get(start_offset.try_into()?..end.try_into()?)
-            }
+            },
             ExtentRange::ToEnd(_) => self.data.get(start_offset.try_into()?..),
         };
         let slice = slice.ok_or(Error::InvalidData("extent crosses box boundary"))?;
@@ -417,11 +411,11 @@ enum IlocFieldSize {
 }
 
 impl IlocFieldSize {
-    fn to_bits(&self) -> u8 {
+    const fn to_bits(&self) -> u8 {
         match self {
-            IlocFieldSize::Zero => 0,
-            IlocFieldSize::Four => 32,
-            IlocFieldSize::Eight => 64,
+            Self::Zero => 0,
+            Self::Four => 32,
+            Self::Eight => 64,
         }
     }
 }
@@ -467,7 +461,7 @@ impl TryFrom<u8> for IlocVersion {
 struct ItemLocationBoxItem {
     item_id: u32,
     construction_method: ConstructionMethod,
-    /// Unused for ConstructionMethod::Idat
+    /// Unused for `ConstructionMethod::Idat`
     extents: TryVec<ItemLocationBoxExtent>,
 }
 
@@ -479,7 +473,7 @@ enum ConstructionMethod {
     Item,
 }
 
-/// `extent_index` is omitted since it's only used for ConstructionMethod::Item which
+/// `extent_index` is omitted since it's only used for `ConstructionMethod::Item` which
 /// is currently not implemented.
 #[derive(Clone, Debug)]
 struct ItemLocationBoxExtent {
@@ -493,7 +487,7 @@ enum ExtentRange {
 }
 
 impl ExtentRange {
-    fn start(&self) -> u64 {
+    const fn start(&self) -> u64 {
         match self {
             Self::WithLength(r) => r.start,
             Self::ToEnd(r) => r.start,
@@ -511,7 +505,7 @@ struct BoxIter<'a, T> {
     src: &'a mut T,
 }
 
-impl<'a, T: Read> BoxIter<'a, T> {
+impl<T: Read> BoxIter<'_, T> {
     fn new(src: &mut T) -> BoxIter<'_, T> {
         BoxIter { src }
     }
@@ -529,39 +523,39 @@ impl<'a, T: Read> BoxIter<'a, T> {
     }
 }
 
-impl<'a, T: Read> Read for BMFFBox<'a, T> {
+impl<T: Read> Read for BMFFBox<'_, T> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         self.content.read(buf)
     }
 }
 
-impl<'a, T: Read> TryRead for BMFFBox<'a, T> {
+impl<T: Read> TryRead for BMFFBox<'_, T> {
     fn try_read_to_end(&mut self, buf: &mut TryVec<u8>) -> std::io::Result<usize> {
         fallible_collections::try_read_up_to(self, self.bytes_left(), buf)
     }
 }
 
-impl<'a, T: Offset> Offset for BMFFBox<'a, T> {
+impl<T: Offset> Offset for BMFFBox<'_, T> {
     fn offset(&self) -> u64 {
         self.content.get_ref().offset()
     }
 }
 
-impl<'a, T: Read> BMFFBox<'a, T> {
+impl<T: Read> BMFFBox<'_, T> {
     fn bytes_left(&self) -> u64 {
         self.content.limit()
     }
 
-    fn get_header(&self) -> &BoxHeader {
+    const fn get_header(&self) -> &BoxHeader {
         &self.head
     }
 
-    fn box_iter<'b>(&'b mut self) -> BoxIter<'_, BMFFBox<'a, T>> {
+    fn box_iter(&mut self) -> BoxIter<'_, Self> {
         BoxIter::new(self)
     }
 }
 
-impl<'a, T> Drop for BMFFBox<'a, T> {
+impl<T> Drop for BMFFBox<'_, T> {
     fn drop(&mut self) {
         if self.content.limit() > 0 {
             let name: FourCC = From::from(self.head.name);
@@ -590,13 +584,13 @@ fn read_box_header<T: ReadBytesExt>(src: &mut T) -> Result<BoxHeader> {
                 return Err(Error::InvalidData("malformed wide size"));
             }
             size64
-        }
+        },
         _ => {
             if u64::from(size32) < BoxHeader::MIN_SIZE {
                 return Err(Error::InvalidData("malformed size"));
             }
             u64::from(size32)
-        }
+        },
     };
     let mut offset = match size32 {
         1 => BoxHeader::MIN_LARGE_SIZE,
@@ -621,12 +615,7 @@ fn read_box_header<T: ReadBytesExt>(src: &mut T) -> Result<BoxHeader> {
         None
     };
     assert!(offset <= size);
-    Ok(BoxHeader {
-        name,
-        size,
-        offset,
-        uuid,
-    })
+    Ok(BoxHeader { name, size, offset, uuid })
 }
 
 /// Parse the extra header fields for a full box.
@@ -709,19 +698,17 @@ pub fn read_avif<T: Read>(f: &mut T) -> Result<AvifData> {
         match b.head.name {
             BoxType::MetadataBox => {
                 if meta.is_some() {
-                    return Err(Error::InvalidData(
-                        "There should be zero or one meta boxes per ISO 14496-12:2015 § 8.11.1.1",
-                    ));
+                    return Err(Error::InvalidData("There should be zero or one meta boxes per ISO 14496-12:2015 § 8.11.1.1"));
                 }
                 meta = Some(read_avif_meta(&mut b)?);
-            }
+            },
             BoxType::MediaDataBox => {
                 if b.bytes_left() > 0 {
                     let offset = b.offset();
                     let data = b.read_into_try_vec()?;
                     mdats.push(MediaDataBox { offset, data })?;
                 }
-            }
+            },
             _ => skip_box_content(&mut b)?,
         }
 
@@ -793,9 +780,7 @@ pub fn read_avif<T: Read>(f: &mut T) -> Result<AvifData> {
                 }
             }
             if !found {
-                return Err(Error::InvalidData(
-                    "iloc contains an extent that is not in mdat",
-                ));
+                return Err(Error::InvalidData("iloc contains an extent that is not in mdat"));
             }
         }
     }
@@ -825,43 +810,35 @@ fn read_avif_meta<T: Read + Offset>(src: &mut BMFFBox<'_, T>) -> Result<AvifInte
         match b.head.name {
             BoxType::ItemInfoBox => {
                 if item_infos.is_some() {
-                    return Err(Error::InvalidData(
-                        "There should be zero or one iinf boxes per ISO 14496-12:2015 § 8.11.6.1",
-                    ));
+                    return Err(Error::InvalidData("There should be zero or one iinf boxes per ISO 14496-12:2015 § 8.11.6.1"));
                 }
                 item_infos = Some(read_iinf(&mut b)?);
-            }
+            },
             BoxType::ItemLocationBox => {
                 if iloc_items.is_some() {
-                    return Err(Error::InvalidData(
-                        "There should be zero or one iloc boxes per ISO 14496-12:2015 § 8.11.3.1",
-                    ));
+                    return Err(Error::InvalidData("There should be zero or one iloc boxes per ISO 14496-12:2015 § 8.11.3.1"));
                 }
                 iloc_items = Some(read_iloc(&mut b)?);
-            }
+            },
             BoxType::PrimaryItemBox => {
                 if primary_item_id.is_some() {
-                    return Err(Error::InvalidData(
-                        "There should be zero or one iloc boxes per ISO 14496-12:2015 § 8.11.4.1",
-                    ));
+                    return Err(Error::InvalidData("There should be zero or one iloc boxes per ISO 14496-12:2015 § 8.11.4.1"));
                 }
                 primary_item_id = Some(read_pitm(&mut b)?);
-            }
+            },
             BoxType::ImageReferenceBox => {
                 item_references.append(&mut read_iref(&mut b)?)?;
-            }
+            },
             BoxType::ImagePropertiesBox => {
                 properties = read_iprp(&mut b)?;
-            }
+            },
             _ => skip_box_content(&mut b)?,
         }
 
         check_parser_state(&b.content)?;
     }
 
-    let primary_item_id = primary_item_id.ok_or(Error::InvalidData(
-        "Required pitm box not present in meta box",
-    ))?;
+    let primary_item_id = primary_item_id.ok_or(Error::InvalidData("Required pitm box not present in meta box"))?;
 
     let item_infos = item_infos.ok_or(Error::InvalidData("iinf missing"))?;
 
@@ -874,9 +851,7 @@ fn read_avif_meta<T: Read + Offset>(src: &mut BMFFBox<'_, T>) -> Result<AvifInte
             return Err(Error::InvalidData("primary_item_id type is not av01"));
         }
     } else {
-        return Err(Error::InvalidData(
-            "primary_item_id not present in iinf box",
-        ));
+        return Err(Error::InvalidData("primary_item_id not present in iinf box"));
     }
 
     Ok(AvifInternalMeta {
@@ -921,9 +896,7 @@ fn read_iinf<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<ItemInfoEntry>>
     let mut iter = src.box_iter();
     while let Some(mut b) = iter.next_box()? {
         if b.head.name != BoxType::ItemInfoEntry {
-            return Err(Error::InvalidData(
-                "iinf box should contain only infe boxes",
-            ));
+            return Err(Error::InvalidData("iinf box should contain only infe boxes"));
         }
 
         item_infos.push(read_infe(&mut b)?)?;
@@ -964,9 +937,7 @@ fn read_infe<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<ItemInfoEntry> {
     let item_protection_index = be_u16(src)?;
 
     if item_protection_index != 0 {
-        return Err(Error::Unsupported(
-            "protected items (infe.item_protection_index != 0) are not supported",
-        ));
+        return Err(Error::Unsupported("protected items (infe.item_protection_index != 0) are not supported"));
     }
 
     let item_type = be_u32(src)?;
@@ -1000,9 +971,7 @@ fn read_iref<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<SingleItemTypeR
                 be_u32(&mut b)?
             };
             if from_item_id == to_item_id {
-                return Err(Error::InvalidData(
-                    "from_item_id and to_item_id must be different",
-                ));
+                return Err(Error::InvalidData("from_item_id and to_item_id must be different"));
             }
             item_references.push(SingleItemTypeReferenceBox {
                 item_type: b.head.name.into(),
@@ -1024,10 +993,10 @@ fn read_iprp<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<AssociatedPrope
         match b.head.name {
             BoxType::ItemPropertyContainerBox => {
                 properties = read_ipco(&mut b)?;
-            }
+            },
             BoxType::ItemPropertyAssociationBox => {
                 associations = read_ipma(&mut b)?;
-            }
+            },
             _ => return Err(Error::InvalidData("unexpected ipco child")),
         }
     }
@@ -1120,7 +1089,7 @@ fn read_ipco<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<ItemProperty>> 
             _ => {
                 skip_box_remain(&mut b)?;
                 ItemProperty::Unsupported
-            }
+            },
         })?;
     }
     Ok(properties)
@@ -1152,7 +1121,7 @@ pub struct AuxiliaryTypeProperty {
 
 impl TryClone for AuxiliaryTypeProperty {
     fn try_clone(&self) -> Result<Self, TryReserveError> {
-        Ok(AuxiliaryTypeProperty {
+        Ok(Self {
             aux_type: self.aux_type.try_clone()?,
             aux_subtype: self.aux_subtype.try_clone()?,
         })
@@ -1178,10 +1147,7 @@ fn read_auxc<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<AuxiliaryTypeProperty>
         aux_subtype = TryVec::new();
     }
 
-    Ok(AuxiliaryTypeProperty {
-        aux_type,
-        aux_subtype,
-    })
+    Ok(AuxiliaryTypeProperty { aux_type, aux_subtype })
 }
 
 /// Parse an item location box inside a meta box
@@ -1201,7 +1167,7 @@ fn read_iloc<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<ItemLocationBox
         IlocVersion::Zero => {
             let _reserved = iloc.read_u8(4)?;
             None
-        }
+        },
     };
 
     let item_count = match version {
@@ -1230,26 +1196,22 @@ fn read_iloc<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<ItemLocationBox
                     0 => ConstructionMethod::File,
                     1 => ConstructionMethod::Idat,
                     2 => return Err(Error::Unsupported("construction_method 'item_offset' is not supported")),
-                    _ => return Err(Error::InvalidData("construction_method is taken from the set 0, 1 or 2 per ISO 14496-12:2015 § 8.11.3.3"))
+                    _ => return Err(Error::InvalidData("construction_method is taken from the set 0, 1 or 2 per ISO 14496-12:2015 § 8.11.3.3")),
                 }
-            }
+            },
         };
 
         let data_reference_index = iloc.read_u16(16)?;
 
         if data_reference_index != 0 {
-            return Err(Error::Unsupported(
-                "external file references (iloc.data_reference_index != 0) are not supported",
-            ));
+            return Err(Error::Unsupported("external file references (iloc.data_reference_index != 0) are not supported"));
         }
 
         let base_offset = iloc.read_u64(base_offset_size.to_bits())?;
         let extent_count = iloc.read_u16(16)?;
 
         if extent_count < 1 {
-            return Err(Error::InvalidData(
-                "extent_count must have a value 1 or greater per ISO 14496-12:2015 § 8.11.3.3",
-            ));
+            return Err(Error::InvalidData("extent_count must have a value 1 or greater per ISO 14496-12:2015 § 8.11.3.3"));
         }
 
         let mut extents = TryVec::with_capacity(extent_count.to_usize())?;
@@ -1261,7 +1223,7 @@ fn read_iloc<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<ItemLocationBox
                 Some(index_size) => {
                     debug_assert!(version == IlocVersion::One || version == IlocVersion::Two);
                     Some(iloc.read_u64(index_size.to_bits())?)
-                }
+                },
             };
 
             // Per ISO 14496-12:2015 § 8.11.3.1:
@@ -1288,11 +1250,7 @@ fn read_iloc<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<ItemLocationBox
             extents.push(ItemLocationBoxExtent { extent_range })?;
         }
 
-        items.push(ItemLocationBoxItem {
-            item_id,
-            construction_method,
-            extents,
-        })?;
+        items.push(ItemLocationBoxItem { item_id, construction_method, extents })?;
     }
 
     if iloc.remaining() == 0 {

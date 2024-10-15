@@ -17,7 +17,7 @@ pub struct avif_data_t {
     /// if (a != 0) {r = r * 255 / a}
     /// ```
     pub premultiplied_alpha: u8,
-    _rusty_handle: *mut AvifDataRust,
+    rusty_handle: *mut AvifDataRust,
 }
 
 /// Parse AVIF image file and return results. Returns `NULL` if the file can't be parsed.
@@ -38,8 +38,8 @@ pub unsafe extern "C" fn avif_parse(bytes: *const u8, bytes_len: usize) -> *cons
                 .as_ref()
                 .map_or(std::ptr::null(), |a| a.as_ptr()),
             alpha_size: data.alpha_item.as_ref().map_or(0, |a| a.len()),
-            premultiplied_alpha: data.premultiplied_alpha as u8,
-            _rusty_handle: Box::into_raw(Box::new(data)),
+            premultiplied_alpha: u8::from(data.premultiplied_alpha),
+            rusty_handle: Box::into_raw(Box::new(data)),
         })),
         Err(_) => std::ptr::null(),
     }
@@ -51,6 +51,6 @@ pub unsafe extern "C" fn avif_data_free(data: *const avif_data_t) {
     if data.is_null() {
         return;
     }
-    let _ = Box::from_raw((*data)._rusty_handle);
-    let _ = Box::from_raw(data as *mut avif_data_t);
+    let _ = Box::from_raw((*data).rusty_handle);
+    let _ = Box::from_raw(data.cast_mut());
 }

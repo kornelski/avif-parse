@@ -59,7 +59,7 @@ fn public_avif_read_samples() {
             Err(err) => {
                 log::error!("{path:?}: {err}");
                 errors += 1;
-            }
+            },
         }
     }
     assert_eq!(0, errors);
