@@ -21,6 +21,7 @@ macro_rules! box_database {
             UnknownBox(u32),
         }
 
+        #[deny(unreachable_patterns)]
         impl From<u32> for BoxType {
             fn from(t: u32) -> BoxType {
                 use self::BoxType::*;
@@ -31,6 +32,7 @@ macro_rules! box_database {
             }
         }
 
+        #[deny(unreachable_patterns)]
         impl Into<u32> for BoxType {
             fn into(self) -> u32 {
                 use self::BoxType::*;
@@ -97,7 +99,6 @@ impl PartialEq<&[u8; 4]> for FourCC {
     }
 }
 
-#[deny(unreachable_patterns)]
 box_database!(
     FileTypeBox                       0x6674_7970, // "ftyp"
     MediaDataBox                      0x6d64_6174, // "mdat"

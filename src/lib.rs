@@ -707,14 +707,16 @@ pub fn read_avif<T: Read>(f: &mut T) -> Result<AvifData> {
             })
         });
 
-    let mut context = AvifData::default();
-    context.premultiplied_alpha = alpha_item_id.map_or(false, |alpha_item_id| {
-        meta.item_references.iter().any(|iref| {
-            iref.from_item_id == meta.primary_item_id
-                && iref.to_item_id == alpha_item_id
-                && iref.item_type == b"prem"
-        })
-    });
+    let mut context = AvifData {
+        premultiplied_alpha: alpha_item_id.map_or(false, |alpha_item_id| {
+            meta.item_references.iter().any(|iref| {
+                iref.from_item_id == meta.primary_item_id
+                    && iref.to_item_id == alpha_item_id
+                    && iref.item_type == b"prem"
+            })
+        }),
+        ..Default::default()
+    };
 
     // load data of relevant items
     for loc in meta.iloc_items.iter() {
