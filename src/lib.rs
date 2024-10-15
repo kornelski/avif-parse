@@ -16,9 +16,6 @@ use std::convert::{TryFrom, TryInto as _};
 use std::io::{Read, Take};
 use std::ops::{Range, RangeFrom};
 
-#[macro_use]
-mod macros;
-
 mod boxes;
 use crate::boxes::{BoxType, FourCC};
 
@@ -681,7 +678,7 @@ pub fn read_avif<T: Read>(f: &mut T) -> Result<AvifData> {
             _ => skip_box_content(&mut b)?,
         }
 
-        check_parser_state!(b.content);
+        check_parser_state(&b.content)?;
     }
 
     let meta = meta.ok_or(Error::InvalidData("missing meta"))?;
@@ -810,7 +807,7 @@ fn read_avif_meta<T: Read + Offset>(src: &mut BMFFBox<'_, T>) -> Result<AvifMeta
             _ => skip_box_content(&mut b)?,
         }
 
-        check_parser_state!(b.content);
+        check_parser_state(&b.content)?;
     }
 
     let primary_item_id = primary_item_id.ok_or(Error::InvalidData(
@@ -879,7 +876,7 @@ fn read_iinf<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<ItemInfoEntry>>
 
         item_infos.push(read_infe(&mut b)?)?;
 
-        check_parser_state!(b.content);
+        check_parser_state(&b.content)?;
     }
 
     Ok(item_infos)
@@ -961,7 +958,7 @@ fn read_iref<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<SingleItemTypeR
                 to_item_id,
             })?;
         }
-        check_parser_state!(b.content);
+        check_parser_state(&b.content)?;
     }
     Ok(item_references)
 }
@@ -1091,7 +1088,7 @@ fn read_pixi<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<u8>> {
         return Err(Error::InvalidData("invalid num_channels"));
     }
 
-    check_parser_state!(src.content);
+    check_parser_state(&src.content)?;
     Ok(channels)
 }
 
@@ -1273,6 +1270,17 @@ fn read_ftyp<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<FileTypeBox> {
         minor_version: minor,
         compatible_brands: brands,
     })
+}
+
+#[cfg_attr(debug_assertions, track_caller)]
+fn check_parser_state<T>(left: &Take<T>) -> Result<(), Error> {
+    let limit = left.limit();
+    if limit == 0 {
+        Ok(())
+    } else {
+        debug_assert_eq!(0, limit, "bad parser state bytes left");
+        Err(Error::InvalidData("unread box content or bad parser sync"))
+    }
 }
 
 /// Skip a number of bytes that we don't care to parse.
