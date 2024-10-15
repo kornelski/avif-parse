@@ -1,12 +1,12 @@
 [package]
 name = "avif-parse"
-version = "1.1.0"
+version = "1.2.0"
 authors = [
+  "Kornel Lesiński <kornel@geekhood.net>",
   "Ralph Giles <giles@mozilla.com>",
   "Matthew Gregan <kinetik@flim.org>",
   "Alfredo Yang <ayang@mozilla.com>",
   "Jon Bauman <jbauman@mozilla.com>",
-  "Kornel Lesiński <kornel@geekhood.net>",
 ]
 edition = "2021"
 description = "Parser for AVIF image files"

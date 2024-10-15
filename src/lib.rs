@@ -282,13 +282,18 @@ pub struct AvifData {
 }
 
 impl AvifData {
+    pub fn from_reader<R: Read>(reader: &mut R) -> Result<Self> {
+        read_avif(reader)
+    }
+
     #[inline(never)]
     fn parse_obu(data: &[u8]) -> Result<AV1Metadata> {
-        let h = obu::extract_minimal_header(data)?;
+        let h = obu::parse_obu(data)?;
         Ok(AV1Metadata {
             still_picture: h.still_picture,
             max_frame_width: h.max_frame_width,
             max_frame_height: h.max_frame_height,
+            bit_depth: h.color.bit_depth,
         })
     }
 
@@ -305,11 +310,14 @@ impl AvifData {
 
 /// See `AvifData::primary_item_metadata()`
 #[non_exhaustive]
+#[derive(Debug, Clone)]
 pub struct AV1Metadata {
     /// Should be true for non-animated AVIF
     pub still_picture: bool,
     pub max_frame_width: NonZeroU32,
     pub max_frame_height: NonZeroU32,
+    /// 8, 10, or 12
+    pub bit_depth: u8,
 }
 
 struct AvifInternalMeta {

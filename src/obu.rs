@@ -27,30 +27,22 @@ const BWDREF_FRAME: usize = 5;
 const ALTREF2_FRAME: usize = 6;
 const ALTREF_FRAME: usize = 7;
 
-pub fn extract_minimal_header(mut data: &[u8]) -> Result<SequenceHeaderObuStart> {
+pub fn parse_obu(mut data: &[u8]) -> Result<SequenceHeaderObu> {
     while !data.is_empty() {
         let h = obu_header(&mut data)?;
         let mut remaining_data = data.get(..h.obu_size).ok_or(Error::UnexpectedEOF)?;
         data = &data[h.obu_size..];
 
         if h.is_sequence_header {
-            return SequenceHeaderObuStart::read(&mut BitReader::new(remaining_data));
+            return SequenceHeaderObu::read(remaining_data);
         }
     }
     Err(Error::UnexpectedEOF)
 }
 
-pub struct SequenceHeaderObuStart {
-    pub seq_profile: u8,
-    pub max_frame_width: NonZeroU32,
-    pub max_frame_height: NonZeroU32,
-    pub still_picture: bool,
-    pub reduced_still_picture_header: bool,
-    pub decoder_model_info_present_flag: bool,
-}
-
-impl SequenceHeaderObuStart {
-    fn read(b: &mut BitReader) -> Result<Self> {
+impl SequenceHeaderObu {
+    fn read(data: &[u8]) -> Result<Self> {
+        let mut b = BitReader::new(data);
         let mut enable_superres = false;
         let mut enable_cdef = false;
         let mut enable_restoration = false;
@@ -109,28 +101,6 @@ impl SequenceHeaderObuStart {
         let max_frame_height = 1 + b.read_u32(frame_height_bits.get())?;
         let max_frame_width = NonZeroU32::new(max_frame_width).ok_or(Error::InvalidData("overflow"))?;
         let max_frame_height = NonZeroU32::new(max_frame_height).ok_or(Error::InvalidData("overflow"))?;
-
-        Ok(Self {
-            seq_profile,
-            max_frame_width,
-            max_frame_height,
-            still_picture,
-            reduced_still_picture_header,
-            decoder_model_info_present_flag,
-        })
-    }
-}
-
-fn sequence_header_obu(data: &[u8]) -> Result<SequenceHeaderObu> {
-    let mut b = BitReader::new(data);
-    let SequenceHeaderObuStart {
-        seq_profile,
-        max_frame_width,
-        max_frame_height,
-        still_picture,
-        reduced_still_picture_header,
-        decoder_model_info_present_flag,
-    } = SequenceHeaderObuStart::read(&mut b)?;
 
     let frame_id_numbers_present_flag = if reduced_still_picture_header { false } else { b.read_bool()? };
     let delta_frame_id_length = if frame_id_numbers_present_flag { 2 + b.read_u8(4)? } else { 0 };
@@ -213,7 +183,7 @@ fn sequence_header_obu(data: &[u8]) -> Result<SequenceHeaderObu> {
 }
 
 #[derive(Debug, Clone)]
-struct SequenceHeaderObu {
+pub(crate) struct SequenceHeaderObu {
     pub color: ColorConfig,
 
     pub seq_profile: u8,
@@ -247,18 +217,18 @@ struct SequenceHeaderObu {
 }
 
 #[derive(Debug, Clone)]
-struct ColorConfig {
-    subsampling_x: u8,
-    subsampling_y: u8,
-    chroma_sample_position: u8,
-    separate_uv_delta_q: bool,
-    color_range: u8,
-    bit_depth: u8,
-    mono_chrome: bool,
+pub(crate) struct ColorConfig {
+    pub subsampling_x: u8,
+    pub subsampling_y: u8,
+    pub chroma_sample_position: u8,
+    pub separate_uv_delta_q: bool,
+    pub color_range: u8,
+    pub bit_depth: u8,
+    pub mono_chrome: bool,
 
-    color_primaries: u8,
-    transfer_characteristics: u8,
-    matrix_coefficients: u8,
+    pub color_primaries: u8,
+    pub transfer_characteristics: u8,
+    pub matrix_coefficients: u8,
 }
 
 fn color_config(b: &mut BitReader, seq_profile: u8) -> Result<ColorConfig> {
