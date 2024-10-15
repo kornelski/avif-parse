@@ -1,6 +1,6 @@
 [package]
 name = "avif-parse"
-version = "1.0.0"
+version = "1.1.0"
 authors = [
   "Ralph Giles <giles@mozilla.com>",
   "Matthew Gregan <kinetik@flim.org>",
@@ -17,6 +17,7 @@ repository = "https://github.com/kornelski/avif-parse"
 readme = "README.md"
 include = ["/README.md", "/Cargo.toml", "/LICENSE", "/src/*.rs", "/avif_parse.h"]
 keywords = ["demuxer", "image", "parser", "heif"]
+rust-version = "1.68"
 
 [lib]
 crate-type = ["rlib", "staticlib"]
