@@ -14,7 +14,10 @@ use fallible_collections::TryReserveError;
 use std::convert::{TryFrom, TryInto as _};
 
 use std::io::{Read, Take};
+use std::num::NonZeroU32;
 use std::ops::{Range, RangeFrom};
+
+mod obu;
 
 mod boxes;
 use crate::boxes::{BoxType, FourCC};
@@ -284,7 +287,38 @@ pub struct AvifData {
     pub premultiplied_alpha: bool,
 }
 
-struct AvifMeta {
+impl AvifData {
+    #[inline(never)]
+    fn parse_obu(data: &[u8]) -> Result<AV1Metadata> {
+        let h = obu::extract_minimal_header(data)?;
+        Ok(AV1Metadata {
+            still_picture: h.still_picture,
+            max_frame_width: h.max_frame_width,
+            max_frame_height: h.max_frame_height,
+        })
+    }
+
+    /// Parses AV1 data to get basic properties of the opaque channel
+    pub fn primary_item_metadata(&self) -> Result<AV1Metadata> {
+        Self::parse_obu(&self.primary_item)
+    }
+
+    /// Parses AV1 data to get basic properties about the alpha channel, if any
+    pub fn alpha_item_metadata(&self) -> Result<Option<AV1Metadata>> {
+        self.alpha_item.as_deref().map(Self::parse_obu).transpose()
+    }
+}
+
+/// See `AvifData::primary_item_metadata()`
+#[non_exhaustive]
+pub struct AV1Metadata {
+    /// Should be true for non-animated AVIF
+    pub still_picture: bool,
+    pub max_frame_width: NonZeroU32,
+    pub max_frame_height: NonZeroU32,
+}
+
+struct AvifInternalMeta {
     item_references: TryVec<SingleItemTypeReferenceBox>,
     properties: TryVec<AssociatedProperty>,
     primary_item_id: u32,
@@ -773,7 +807,7 @@ pub fn read_avif<T: Read>(f: &mut T) -> Result<AvifData> {
 /// Currently requires the primary item to be an av01 item type and generates
 /// an error otherwise.
 /// See ISO 14496-12:2015 § 8.11.1
-fn read_avif_meta<T: Read + Offset>(src: &mut BMFFBox<'_, T>) -> Result<AvifMeta> {
+fn read_avif_meta<T: Read + Offset>(src: &mut BMFFBox<'_, T>) -> Result<AvifInternalMeta> {
     let version = read_fullbox_version_no_flags(src)?;
 
     if version != 0 {
@@ -845,7 +879,7 @@ fn read_avif_meta<T: Read + Offset>(src: &mut BMFFBox<'_, T>) -> Result<AvifMeta
         ));
     }
 
-    Ok(AvifMeta {
+    Ok(AvifInternalMeta {
         properties,
         item_references,
         primary_item_id,

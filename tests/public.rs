@@ -51,7 +51,10 @@ fn public_avif_read_samples() {
         log::debug!("parsing {path:?}");
         let input = &mut File::open(path).expect("bad file");
         match avif_parse::read_avif(input) {
-            Ok(_) => {},
+            Ok(avif) => {
+                avif.primary_item_metadata().unwrap();
+                avif.alpha_item_metadata().unwrap();
+            },
             Err(Error::Unsupported(why)) => log::warn!("{why}"),
             Err(err) => {
                 log::error!("{path:?}: {err}");
