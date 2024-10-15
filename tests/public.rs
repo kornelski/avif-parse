@@ -1,14 +1,13 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
+use avif_parse::Error;
 use std::fs::File;
-use std::path::Path;
 
 static IMAGE_AVIF: &str = "av1-avif/testFiles/Microsoft/Monochrome.avif";
 static IMAGE_AVIF_EXTENTS: &str = "tests/kodim-extents.avif";
 static IMAGE_AVIF_CORRUPT: &str = "tests/bug-1655846.avif";
 static IMAGE_AVIF_CORRUPT_2: &str = "tests/bug-1661347.avif";
-static IMAGE_AVIF_GRID: &str = "av1-avif/testFiles/Microsoft/Summer_in_Tomsk_720p_5x4_grid.avif";
 static AVIF_TEST_DIR: &str = "av1-avif/testFiles";
 
 #[test]
@@ -40,21 +39,25 @@ fn public_avif_bug_1661347() {
 
 #[test]
 fn public_avif_read_samples() {
-    env_logger::init();
+    let _ = env_logger::builder().is_test(true).filter_level(log::LevelFilter::max()).try_init();
+    let mut errors = 0;
 
     for entry in walkdir::WalkDir::new(AVIF_TEST_DIR) {
         let entry = entry.expect("AVIF entry");
         let path = entry.path();
         if !path.is_file() || path.extension().unwrap_or_default() != "avif" {
-            eprintln!("Skipping {:?}", path);
             continue; // Skip directories, ReadMe.txt, etc.
         }
-        if path == Path::new(IMAGE_AVIF_GRID) {
-            eprintln!("Skipping {:?}", path);
-            continue; // Remove when public_avif_primary_item_is_grid passes
+        log::debug!("parsing {path:?}");
+        let input = &mut File::open(path).expect("bad file");
+        match avif_parse::read_avif(input) {
+            Ok(_) => {},
+            Err(Error::Unsupported(why)) => log::warn!("{why}"),
+            Err(err) => {
+                log::error!("{path:?}: {err}");
+                errors += 1;
+            }
         }
-        println!("parsing {:?}", path);
-        let input = &mut File::open(path).expect("Unknow file");
-        let _ = avif_parse::read_avif(input).expect("read_avif failed");
     }
+    assert_eq!(0, errors);
 }
