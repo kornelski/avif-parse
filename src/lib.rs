@@ -294,6 +294,8 @@ impl AvifData {
             max_frame_width: h.max_frame_width,
             max_frame_height: h.max_frame_height,
             bit_depth: h.color.bit_depth,
+            seq_profile: h.seq_profile,
+            chroma_subsampling: h.color.chroma_subsampling,
         })
     }
 
@@ -318,6 +320,10 @@ pub struct AV1Metadata {
     pub max_frame_height: NonZeroU32,
     /// 8, 10, or 12
     pub bit_depth: u8,
+    /// 0, 1 or 2 for the level of complexity
+    pub seq_profile: u8,
+    /// Horizontal and vertical. `false` is full-res.
+    pub chroma_subsampling: (bool, bool),
 }
 
 struct AvifInternalMeta {

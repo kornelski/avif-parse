@@ -218,8 +218,7 @@ pub(crate) struct SequenceHeaderObu {
 
 #[derive(Debug, Clone)]
 pub(crate) struct ColorConfig {
-    pub subsampling_x: u8,
-    pub subsampling_y: u8,
+    pub chroma_subsampling: (bool, bool),
     pub chroma_sample_position: u8,
     pub separate_uv_delta_q: bool,
     pub color_range: u8,
@@ -261,15 +260,13 @@ fn color_config(b: &mut BitReader, seq_profile: u8) -> Result<ColorConfig> {
         matrix_coefficients = b.read_u8(8)?;
     }
 
-    let subsampling_x;
-    let subsampling_y;
+    let chroma_subsampling;
     let chroma_sample_position;
     let separate_uv_delta_q;
     let color_range;
     if mono_chrome {
         color_range = b.read_u8(1)?;
-        subsampling_x = 0;
-        subsampling_y = 0;
+        chroma_subsampling = (false, false);
         chroma_sample_position = 0;
         separate_uv_delta_q = false;
     } else if color_primaries == 1 //Bt709
@@ -277,37 +274,32 @@ fn color_config(b: &mut BitReader, seq_profile: u8) -> Result<ColorConfig> {
         && matrix_coefficients == 0
     {
         color_range = 1;
-        subsampling_x = 0;
-        subsampling_y = 0;
+        chroma_subsampling = (false, false);
         chroma_sample_position = 0;
         separate_uv_delta_q = false;
     } else {
         color_range = b.read_u8(1)?;
         if seq_profile == 0 {
-            subsampling_x = 1;
-            subsampling_y = 1;
+            chroma_subsampling = (true, true);
         } else if seq_profile == 1 {
-            subsampling_x = 0;
-            subsampling_y = 0;
+            chroma_subsampling = (false, false);
         } else if bit_depth == 12 {
-            subsampling_x = b.read_u8(1)?;
-            if subsampling_x != 0 {
-                subsampling_y = b.read_u8(1)?;
+            let x = b.read_bool()?;
+            chroma_subsampling = if x {
+                (x, b.read_bool()?)
             } else {
-                subsampling_y = 0;
+                (false, false)
             }
         } else {
-            subsampling_x = 1;
-            subsampling_y = 0;
+            chroma_subsampling = (true, false);
         }
         debug_assert!(!mono_chrome);
-        chroma_sample_position = if subsampling_x != 0 && subsampling_y != 0 { b.read_u8(2)? } else { 0 };
+        chroma_sample_position = if chroma_subsampling.0 && chroma_subsampling.1 { b.read_u8(2)? } else { 0 };
         separate_uv_delta_q = b.read_bool()?;
     }
 
     Ok(ColorConfig {
-        subsampling_x,
-        subsampling_y,
+        chroma_subsampling,
         chroma_sample_position,
         separate_uv_delta_q,
         color_range,
