@@ -398,7 +398,7 @@ impl MediaDataBox {
 #[derive(Debug)]
 struct ItemInfoEntry {
     item_id: u32,
-    item_type: u32,
+    item_type: FourCC,
 }
 
 /// See ISO 14496-12:2015 § 8.11.12
@@ -851,11 +851,11 @@ fn read_avif_meta<T: Read + Offset>(src: &mut BMFFBox<'_, T>) -> Result<AvifInte
     let item_infos = item_infos.ok_or(Error::InvalidData("iinf missing"))?;
 
     if let Some(item_info) = item_infos.iter().find(|x| x.item_id == primary_item_id) {
-        if &item_info.item_type.to_be_bytes() != b"av01" {
-            if &item_info.item_type.to_be_bytes() == b"grid" {
+        if item_info.item_type != b"av01" {
+            if item_info.item_type == b"grid" {
                 return Err(Error::Unsupported("Grid-based AVIF collage is not supported"));
             }
-            warn!("primary_item_id type: {}", U32BE(item_info.item_type));
+            warn!("primary_item_id type: {}", item_info.item_type);
             return Err(Error::InvalidData("primary_item_id type is not av01"));
         }
     } else {
@@ -915,19 +915,6 @@ fn read_iinf<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<ItemInfoEntry>>
     Ok(item_infos)
 }
 
-/// A simple wrapper to interpret a u32 as a 4-byte string in big-endian
-/// order without requiring any allocation.
-struct U32BE(u32);
-
-impl std::fmt::Display for U32BE {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match std::str::from_utf8(&self.0.to_be_bytes()) {
-            Ok(s) => f.write_str(s),
-            Err(_) => write!(f, "{:x?}", self.0),
-        }
-    }
-}
-
 /// Parse an Item Info Entry
 /// See ISO 14496-12:2015 § 8.11.6.2
 fn read_infe<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<ItemInfoEntry> {
@@ -948,8 +935,8 @@ fn read_infe<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<ItemInfoEntry> {
         return Err(Error::Unsupported("protected items (infe.item_protection_index != 0) are not supported"));
     }
 
-    let item_type = be_u32(src)?;
-    debug!("infe item_id {} item_type: {}", item_id, U32BE(item_type));
+    let item_type = FourCC::from(be_u32(src)?);
+    debug!("infe item_id {} item_type: {}", item_id, item_type);
 
     // There are some additional fields here, but they're not of interest to us
     skip_box_remain(src)?;
