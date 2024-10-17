@@ -27,7 +27,7 @@ const BWDREF_FRAME: usize = 5;
 const ALTREF2_FRAME: usize = 6;
 const ALTREF_FRAME: usize = 7;
 
-pub fn parse_obu(mut data: &[u8]) -> Result<SequenceHeaderObu> {
+pub(crate) fn parse_obu(mut data: &[u8]) -> Result<SequenceHeaderObu> {
     while !data.is_empty() {
         let h = obu_header(&mut data)?;
         let mut remaining_data = data.get(..h.obu_size).ok_or(Error::UnexpectedEOF)?;
