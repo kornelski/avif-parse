@@ -8,7 +8,8 @@ static IMAGE_AVIF: &str = "av1-avif/testFiles/Microsoft/Monochrome.avif";
 static IMAGE_AVIF_EXTENTS: &str = "tests/kodim-extents.avif";
 static IMAGE_AVIF_CORRUPT: &str = "tests/bug-1655846.avif";
 static IMAGE_AVIF_CORRUPT_2: &str = "tests/bug-1661347.avif";
-static AVIF_TEST_DIR: &str = "av1-avif/testFiles";
+static AOMEDIA_TEST_FILES: &str = "av1-avif/testFiles";
+static LINK_U_SAMPLES: &str = "link-u-samples";
 
 #[test]
 fn public_avif_primary_item() {
@@ -38,11 +39,20 @@ fn public_avif_bug_1661347() {
 }
 
 #[test]
-fn public_avif_read_samples() {
+fn aomedia_sample_images() {
+    test_dir(AOMEDIA_TEST_FILES);
+}
+
+#[test]
+fn linku_sample_images() {
+    test_dir(LINK_U_SAMPLES);
+}
+
+fn test_dir(dir: &str) {
     let _ = env_logger::builder().is_test(true).filter_level(log::LevelFilter::max()).try_init();
     let mut errors = 0;
 
-    for entry in walkdir::WalkDir::new(AVIF_TEST_DIR) {
+    for entry in walkdir::WalkDir::new(dir) {
         let entry = entry.expect("AVIF entry");
         let path = entry.path();
         if !path.is_file() || path.extension().unwrap_or_default() != "avif" {

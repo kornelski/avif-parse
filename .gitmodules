@@ -1,3 +1,6 @@
 [submodule "av1-avif"]
 	path = av1-avif
 	url = https://github.com/AOMediaCodec/av1-avif.git
+[submodule "link-u-samples"]
+	path = link-u-samples
+	url = https://github.com/link-u/avif-sample-images
