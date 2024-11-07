@@ -515,7 +515,8 @@ struct BMFFBox<'a, T> {
 impl<'a, T: Read> BMFFBox<'a, T> {
     fn read_into_try_vec(&mut self) -> std::io::Result<TryVec<u8>> {
         let mut vec = std::vec::Vec::new();
-        vec.try_reserve_exact(self.content.limit() as usize)?;
+        vec.try_reserve_exact(self.content.limit() as usize)
+            .map_err(|_| std::io::ErrorKind::OutOfMemory)?;
         self.content.read_to_end(&mut vec)?; // The default impl
         Ok(vec.into())
     }
@@ -771,8 +772,7 @@ pub fn read_avif<T: Read>(f: &mut T) -> Result<AvifData> {
                 prop.item_id == item_id
                     && match &prop.property {
                         ItemProperty::AuxiliaryType(urn) => {
-                            urn.aux_type.as_slice()
-                                == "urn:mpeg:mpegB:cicp:systems:auxiliary:alpha".as_bytes()
+                            urn.type_subtype().0 == b"urn:mpeg:mpegB:cicp:systems:auxiliary:alpha"
                         }
                         _ => false,
                     }
@@ -1139,15 +1139,25 @@ fn read_pixi<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<ArrayVec<u8, 16>> {
 
 #[derive(Debug, PartialEq)]
 pub struct AuxiliaryTypeProperty {
-    aux_type: TryString,
-    aux_subtype: TryString,
+    aux_data: TryString,
+}
+
+impl AuxiliaryTypeProperty {
+    pub fn type_subtype(&self) -> (&[u8], &[u8]) {
+        let split = self.aux_data.iter().position(|&b| b == b'\0')
+            .map(|pos| self.aux_data.split_at(pos));
+        if let Some((aux_type, rest)) = split {
+            (aux_type, &rest[1..])
+        } else {
+            (&self.aux_data, &[])
+        }
+    }
 }
 
 impl TryClone for AuxiliaryTypeProperty {
     fn try_clone(&self) -> Result<Self, TryReserveError> {
         Ok(Self {
-            aux_type: self.aux_type.try_clone()?,
-            aux_subtype: self.aux_subtype.try_clone()?,
+            aux_data: self.aux_data.try_clone()?,
         })
     }
 }
@@ -1158,19 +1168,9 @@ fn read_auxc<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<AuxiliaryTypeProperty>
         return Err(Error::Unsupported("auxC version"));
     }
 
-    let aux = src.read_into_try_vec()?;
+    let aux_data = src.read_into_try_vec()?;
 
-    let (aux_type, aux_subtype): (TryString, TryVec<u8>);
-    if let Some(nul_byte_pos) = aux.iter().position(|&b| b == b'\0') {
-        let (a, b) = aux.as_slice().split_at(nul_byte_pos);
-        aux_type = a.try_into()?;
-        aux_subtype = (&b[1..]).try_into()?;
-    } else {
-        aux_type = aux;
-        aux_subtype = TryVec::new();
-    }
-
-    Ok(AuxiliaryTypeProperty { aux_type, aux_subtype })
+    Ok(AuxiliaryTypeProperty { aux_data })
 }
 
 /// Parse an item location box inside a meta box
