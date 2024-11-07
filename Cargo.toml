@@ -27,8 +27,8 @@ byteorder = "1.5.0"
 bitreader = "0.3.8"
 leb128 = "0.2.5"
 log = "0.4.20"
-static_assertions = "1.1.0"
-fallible_collections = { version = "0.4.4", features = ["std_io"] }
+fallible_collections = { version = "0.5.1", features = ["std"] }
+arrayvec = "0.7.6"
 
 [dev-dependencies]
 env_logger = "0.11"

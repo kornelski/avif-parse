@@ -4,11 +4,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use arrayvec::ArrayVec;
 use log::{debug, warn};
 
 use bitreader::BitReader;
 use byteorder::ReadBytesExt;
-use fallible_collections::{TryClone, TryRead, TryReserveError};
+use fallible_collections::{TryClone, TryReserveError};
 use std::convert::{TryFrom, TryInto as _};
 
 use std::io::{Read, Take};
@@ -22,10 +23,6 @@ use crate::boxes::{BoxType, FourCC};
 
 /// This crate can be used from C.
 pub mod c_api;
-
-// Unit tests.
-#[cfg(test)]
-mod tests;
 
 // Arbitrary buffer size limit used for raw read_bufs on a box.
 // const BUF_SIZE_LIMIT: u64 = 10 * 1024 * 1024;
@@ -41,7 +38,7 @@ trait ToU64 {
 /// which can fail `TryInto<usize>` is used, it may panic.
 impl ToU64 for usize {
     fn to_u64(self) -> u64 {
-        static_assertions::const_assert!(std::mem::size_of::<usize>() <= std::mem::size_of::<u64>());
+        const _: () = assert!(std::mem::size_of::<usize>() <= std::mem::size_of::<u64>());
         self.try_into().ok().unwrap()
     }
 }
@@ -59,7 +56,7 @@ macro_rules! impl_to_usize_from {
     ( $from_type:ty ) => {
         impl ToUsize for $from_type {
             fn to_usize(self) -> usize {
-                static_assertions::const_assert!(std::mem::size_of::<$from_type>() <= std::mem::size_of::<usize>());
+                const _: () = assert!(std::mem::size_of::<$from_type>() <= std::mem::size_of::<usize>());
                 self.try_into().ok().unwrap()
             }
         }
@@ -515,6 +512,39 @@ struct BMFFBox<'a, T> {
     content: Take<&'a mut T>,
 }
 
+impl<'a, T: Read> BMFFBox<'a, T> {
+    fn read_into_try_vec(&mut self) -> std::io::Result<TryVec<u8>> {
+        let mut vec = std::vec::Vec::new();
+        vec.try_reserve_exact(self.content.limit() as usize)?;
+        self.content.read_to_end(&mut vec)?; // The default impl
+        Ok(vec.into())
+    }
+}
+
+
+#[test]
+fn box_read_to_end() {
+    let tmp = &mut b"1234567890".as_slice();
+    let mut src = BMFFBox {
+        head: BoxHeader { name: BoxType::FileTypeBox, size: 5, offset: 0, uuid: None },
+        content: <_ as Read>::take(tmp, 5),
+    };
+    let buf = src.read_into_try_vec().unwrap();
+    assert_eq!(buf.len(), 5);
+    assert_eq!(buf, b"12345".as_ref());
+}
+
+#[test]
+fn box_read_to_end_oom() {
+    let tmp = &mut b"1234567890".as_slice();
+    let mut src = BMFFBox {
+        head: BoxHeader { name: BoxType::FileTypeBox, size: 5, offset: 0, uuid: None },
+        content: <_ as Read>::take(tmp, usize::MAX.try_into().expect("usize < u64")),
+    };
+    assert!(src.read_into_try_vec().is_err());
+}
+
+
 struct BoxIter<'a, T> {
     src: &'a mut T,
 }
@@ -540,12 +570,6 @@ impl<T: Read> BoxIter<'_, T> {
 impl<T: Read> Read for BMFFBox<'_, T> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         self.content.read(buf)
-    }
-}
-
-impl<T: Read> TryRead for BMFFBox<'_, T> {
-    fn try_read_to_end(&mut self, buf: &mut TryVec<u8>) -> std::io::Result<usize> {
-        fallible_collections::try_read_up_to(self, self.bytes_left(), buf)
     }
 }
 
@@ -1022,7 +1046,7 @@ fn read_iprp<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<AssociatedPrope
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum ItemProperty {
-    Channels(TryVec<u8>),
+    Channels(ArrayVec<u8, 16>),
     AuxiliaryType(AuxiliaryTypeProperty),
     Unsupported,
 }
@@ -1030,7 +1054,7 @@ pub(crate) enum ItemProperty {
 impl TryClone for ItemProperty {
     fn try_clone(&self) -> Result<Self, TryReserveError> {
         Ok(match self {
-            Self::Channels(val) => Self::Channels(val.try_clone()?),
+            Self::Channels(val) => Self::Channels(val.clone()),
             Self::AuxiliaryType(val) => Self::AuxiliaryType(val.try_clone()?),
             Self::Unsupported => Self::Unsupported,
         })
@@ -1064,8 +1088,9 @@ fn read_ipma<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<Association>> {
         let association_count = src.read_u8()?;
         for _ in 0..association_count {
             let num_association_bytes = if flags & 1 == 1 { 2 } else { 1 };
-            let association = src.take(num_association_bytes).read_into_try_vec()?;
-            let mut association = BitReader::new(association.as_slice());
+            let association = &mut [0; 2][..num_association_bytes];
+            src.read_exact(association)?;
+            let mut association = BitReader::new(association);
             let essential = association.read_bool()?;
             let property_index = association.read_u16(association.remaining().try_into()?)?;
             associations.push(Association {
@@ -1096,19 +1121,17 @@ fn read_ipco<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<ItemProperty>> 
     Ok(properties)
 }
 
-fn read_pixi<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<u8>> {
+fn read_pixi<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<ArrayVec<u8, 16>> {
     let version = read_fullbox_version_no_flags(src)?;
     if version != 0 {
         return Err(Error::Unsupported("pixi version"));
     }
 
-    let num_channels = src.read_u8()?.into();
-    let mut channels = TryVec::with_capacity(num_channels)?;
-    let num_channels_read = src.try_read_to_end(&mut channels)?;
-
-    if num_channels_read != num_channels {
-        return Err(Error::InvalidData("invalid num_channels"));
-    }
+    let num_channels = usize::from(src.read_u8()?);
+    let mut channels = ArrayVec::new();
+    channels.extend((0..num_channels.min(channels.capacity())).map(|_| 0));
+    debug_assert_eq!(num_channels, channels.len());
+    src.read_exact(&mut channels).map_err(|_| Error::InvalidData("invalid num_channels"))?;
 
     check_parser_state(&src.content)?;
     Ok(channels)
@@ -1135,8 +1158,7 @@ fn read_auxc<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<AuxiliaryTypeProperty>
         return Err(Error::Unsupported("auxC version"));
     }
 
-    let mut aux = TryString::new();
-    src.try_read_to_end(&mut aux)?;
+    let aux = src.read_into_try_vec()?;
 
     let (aux_type, aux_subtype): (TryString, TryVec<u8>);
     if let Some(nul_byte_pos) = aux.iter().position(|&b| b == b'\0') {
