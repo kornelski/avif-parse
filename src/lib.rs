@@ -101,9 +101,13 @@ impl<T: Read> Read for OffsetReader<'_, T> {
     }
 }
 
+#[doc(hidden)]
 pub type TryVec<T> = fallible_collections::TryVec<T>;
+#[doc(hidden)]
 pub type TryString = fallible_collections::TryVec<u8>;
-pub type TryHashMap<K, V> = fallible_collections::TryHashMap<K, V>;
+#[doc(hidden)]
+pub type TryHashMap<K, V> = std::collections::HashMap<K, V>;
+#[doc(hidden)]
 pub type TryBox<T> = fallible_collections::TryBox<T>;
 
 // To ensure we don't use stdlib allocating types by accident
