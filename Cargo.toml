@@ -1,6 +1,6 @@
 [package]
 name = "avif-parse"
-version = "1.3.2"
+version = "1.4.0"
 authors = [
   "Kornel Lesiński <kornel@geekhood.net>",
   "Ralph Giles <giles@mozilla.com>",
@@ -17,7 +17,7 @@ repository = "https://github.com/kornelski/avif-parse"
 readme = "README.md"
 include = ["/README.md", "/Cargo.toml", "/LICENSE", "/src/*.rs", "/avif_parse.h"]
 keywords = ["demuxer", "image", "parser", "heif"]
-rust-version = "1.68"
+rust-version = "1.69"
 
 [lib]
 crate-type = ["rlib", "staticlib"]
@@ -35,9 +35,7 @@ env_logger = "0.11"
 walkdir = "2.4.0"
 
 [features]
-# Enable mp4parse_fallible to use fallible memory allocation rather than
-# panicking on OOM.  Note that this is only safe within Gecko where the system
-# allocator has been globally overridden (see BMO 1457359).
+# Obsolete (fallible allocations are used anyway)
 mp4parse_fallible = []
 
 [badges]
