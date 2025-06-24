@@ -1,5 +1,6 @@
-use std::{env, fs, path::PathBuf};
 use avif_parse::AvifData;
+use std::path::PathBuf;
+use std::{env, fs};
 
 fn main() {
     env_logger::init();
@@ -17,7 +18,7 @@ fn main() {
     println!("Written {}", av1_out.display());
 
     if let Some(alpha_data) = avif.alpha_item.as_deref() {
-        let av1_out = path.with_extension(if avif.premultiplied_alpha { "prem.av1"} else {"alpha.av1"});
+        let av1_out = path.with_extension(if avif.premultiplied_alpha { "prem.av1" } else { "alpha.av1" });
         fs::write(&av1_out, alpha_data).unwrap();
         println!("Written {}", av1_out.display());
     }

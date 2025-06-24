@@ -58,7 +58,7 @@ fn test_dir(dir: &str) {
         if !path.is_file() || path.extension().unwrap_or_default() != "avif" {
             continue; // Skip directories, ReadMe.txt, etc.
         }
-        log::debug!("parsing {path:?}");
+        log::debug!("parsing {:?}", path.display());
         let input = &mut File::open(path).expect("bad file");
         match avif_parse::read_avif(input) {
             Ok(avif) => {
@@ -67,7 +67,7 @@ fn test_dir(dir: &str) {
             },
             Err(Error::Unsupported(why)) => log::warn!("{why}"),
             Err(err) => {
-                log::error!("{path:?}: {err}");
+                log::error!("{:?}: {err}", path.display());
                 errors += 1;
             },
         }

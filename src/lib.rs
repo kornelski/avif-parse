@@ -1,3 +1,4 @@
+#![allow(clippy::missing_safety_doc)]
 //! Module for parsing ISO Base Media Format aka video/mp4 streams.
 
 // This Source Code Form is subject to the terms of the Mozilla Public
@@ -143,8 +144,7 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let msg = match self {
-            Self::InvalidData(s) |
-            Self::Unsupported(s) => s,
+            Self::InvalidData(s) | Self::Unsupported(s) => s,
             Self::UnexpectedEOF => "EOF",
             Self::Io(err) => return err.fmt(f),
             Self::NoMoov => "Missing Moov box",
@@ -230,8 +230,10 @@ struct BoxHeader {
 }
 
 impl BoxHeader {
-    const MIN_SIZE: u64 = 8; // 4-byte size + 4-byte type
-    const MIN_LARGE_SIZE: u64 = 16; // 4-byte size + 4-byte type + 16-byte size
+    /// 4-byte size + 4-byte type
+    const MIN_SIZE: u64 = 8;
+    /// 4-byte size + 4-byte type + 16-byte size
+    const MIN_LARGE_SIZE: u64 = 16;
 }
 
 /// File type box 'ftyp'.
@@ -321,9 +323,9 @@ impl AV1Metadata {
     /// This is for the bare image payload from an encoder, not an AVIF/HEIF file.
     /// To parse AVIF files, see [`AvifData::from_reader()`].
     #[inline(never)]
-    pub fn parse_av1_bitstream(obu_bitstream: &[u8]) -> Result<AV1Metadata> {
+    pub fn parse_av1_bitstream(obu_bitstream: &[u8]) -> Result<Self> {
         let h = obu::parse_obu(obu_bitstream)?;
-        Ok(AV1Metadata {
+        Ok(Self {
             still_picture: h.still_picture,
             max_frame_width: h.max_frame_width,
             max_frame_height: h.max_frame_height,
@@ -524,7 +526,7 @@ struct BMFFBox<'a, T> {
     content: Take<&'a mut T>,
 }
 
-impl<'a, T: Read> BMFFBox<'a, T> {
+impl<T: Read> BMFFBox<'_, T> {
     fn read_into_try_vec(&mut self) -> std::io::Result<TryVec<u8>> {
         let mut vec = std::vec::Vec::new();
         vec.try_reserve_exact(self.content.limit() as usize)
@@ -533,7 +535,6 @@ impl<'a, T: Read> BMFFBox<'a, T> {
         Ok(vec.into())
     }
 }
-
 
 #[test]
 fn box_read_to_end() {
@@ -556,7 +557,6 @@ fn box_read_to_end_oom() {
     };
     assert!(src.read_into_try_vec().is_err());
 }
-
 
 struct BoxIter<'a, T> {
     src: &'a mut T,
@@ -697,7 +697,7 @@ fn skip_box_content<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<()> {
     // Skip the contents of unknown chunks.
     let to_skip = {
         let header = src.get_header();
-        debug!("{:?} (skipped)", header);
+        debug!("{header:?} (skipped)");
         header
             .size
             .checked_sub(header.offset)
@@ -712,7 +712,7 @@ fn skip_box_remain<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<()> {
     let remain = {
         let header = src.get_header();
         let len = src.bytes_left();
-        debug!("remain {} (skipped) in {:?}", len, header);
+        debug!("remain {len} (skipped) in {header:?}");
         len
     };
     skip(src, remain)
@@ -978,7 +978,7 @@ fn read_infe<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<ItemInfoEntry> {
     }
 
     let item_type = FourCC::from(be_u32(src)?);
-    debug!("infe item_id {} item_type: {}", item_id, item_type);
+    debug!("infe item_id {item_id} item_type: {item_type}");
 
     // There are some additional fields here, but they're not of interest to us
     skip_box_remain(src)?;
@@ -1157,6 +1157,7 @@ pub struct AuxiliaryTypeProperty {
 }
 
 impl AuxiliaryTypeProperty {
+    #[must_use]
     pub fn type_subtype(&self) -> (&[u8], &[u8]) {
         let split = self.aux_data.iter().position(|&b| b == b'\0')
             .map(|pos| self.aux_data.split_at(pos));

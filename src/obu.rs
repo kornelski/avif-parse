@@ -183,6 +183,7 @@ impl SequenceHeaderObu {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct SequenceHeaderObu {
     pub color: ColorConfig,
 
@@ -253,12 +254,13 @@ fn color_config(b: &mut BitReader, seq_profile: u8) -> Result<ColorConfig> {
     let color_description_present_flag = b.read_bool()?;
     let mut color_primaries = 2;
     let mut transfer_characteristics = 2;
-    let mut matrix_coefficients = 2;
-    if color_description_present_flag {
+    let matrix_coefficients = if color_description_present_flag {
         color_primaries = b.read_u8(8)?;
         transfer_characteristics = b.read_u8(8)?;
-        matrix_coefficients = b.read_u8(8)?;
-    }
+        b.read_u8(8)?
+    } else {
+        2
+    };
 
     let chroma_subsampling;
     let chroma_sample_position;
