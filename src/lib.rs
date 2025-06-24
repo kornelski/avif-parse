@@ -287,32 +287,18 @@ impl AvifData {
         read_avif(reader)
     }
 
-    #[inline(never)]
-    fn parse_obu(data: &[u8]) -> Result<AV1Metadata> {
-        let h = obu::parse_obu(data)?;
-        Ok(AV1Metadata {
-            still_picture: h.still_picture,
-            max_frame_width: h.max_frame_width,
-            max_frame_height: h.max_frame_height,
-            bit_depth: h.color.bit_depth,
-            seq_profile: h.seq_profile,
-            chroma_subsampling: h.color.chroma_subsampling,
-            monochrome: h.color.monochrome,
-        })
-    }
-
     /// Parses AV1 data to get basic properties of the opaque channel
     pub fn primary_item_metadata(&self) -> Result<AV1Metadata> {
-        Self::parse_obu(&self.primary_item)
+        AV1Metadata::parse_av1_bitstream(&self.primary_item)
     }
 
     /// Parses AV1 data to get basic properties about the alpha channel, if any
     pub fn alpha_item_metadata(&self) -> Result<Option<AV1Metadata>> {
-        self.alpha_item.as_deref().map(Self::parse_obu).transpose()
+        self.alpha_item.as_deref().map(AV1Metadata::parse_av1_bitstream).transpose()
     }
 }
 
-/// See `AvifData::primary_item_metadata()`
+/// See [`AvifData::primary_item_metadata()`]
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct AV1Metadata {
@@ -327,6 +313,26 @@ pub struct AV1Metadata {
     /// Horizontal and vertical. `false` is full-res.
     pub chroma_subsampling: (bool, bool),
     pub monochrome: bool,
+}
+
+impl AV1Metadata {
+    /// Parses raw AV1 bitstream (OBU sequence header) only.
+    ///
+    /// This is for the bare image payload from an encoder, not an AVIF/HEIF file.
+    /// To parse AVIF files, see [`AvifData::from_reader()`].
+    #[inline(never)]
+    pub fn parse_av1_bitstream(obu_bitstream: &[u8]) -> Result<AV1Metadata> {
+        let h = obu::parse_obu(obu_bitstream)?;
+        Ok(AV1Metadata {
+            still_picture: h.still_picture,
+            max_frame_width: h.max_frame_width,
+            max_frame_height: h.max_frame_height,
+            bit_depth: h.color.bit_depth,
+            seq_profile: h.seq_profile,
+            chroma_subsampling: h.color.chroma_subsampling,
+            monochrome: h.color.monochrome,
+        })
+    }
 }
 
 struct AvifInternalMeta {
@@ -1144,6 +1150,8 @@ fn read_pixi<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<ArrayVec<u8, 16>> {
 }
 
 #[derive(Debug, PartialEq)]
+#[doc(hidden)]
+// this wasn't supposed to be public
 pub struct AuxiliaryTypeProperty {
     aux_data: TryString,
 }
