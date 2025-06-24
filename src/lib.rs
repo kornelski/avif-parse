@@ -297,6 +297,7 @@ impl AvifData {
             bit_depth: h.color.bit_depth,
             seq_profile: h.seq_profile,
             chroma_subsampling: h.color.chroma_subsampling,
+            monochrome: h.color.monochrome,
         })
     }
 
@@ -325,6 +326,7 @@ pub struct AV1Metadata {
     pub seq_profile: u8,
     /// Horizontal and vertical. `false` is full-res.
     pub chroma_subsampling: (bool, bool),
+    pub monochrome: bool,
 }
 
 struct AvifInternalMeta {

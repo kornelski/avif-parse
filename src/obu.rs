@@ -223,7 +223,7 @@ pub(crate) struct ColorConfig {
     pub separate_uv_delta_q: bool,
     pub color_range: u8,
     pub bit_depth: u8,
-    pub mono_chrome: bool,
+    pub monochrome: bool,
 
     pub color_primaries: u8,
     pub transfer_characteristics: u8,
@@ -247,9 +247,9 @@ fn color_config(b: &mut BitReader, seq_profile: u8) -> Result<ColorConfig> {
         }
     };
 
-    let mono_chrome = if seq_profile == 1 { false } else { b.read_bool()? };
+    let monochrome = if seq_profile == 1 { false } else { b.read_bool()? };
 
-    let num_planes = if mono_chrome { 1 } else { 3 };
+    let num_planes = if monochrome { 1 } else { 3 };
     let color_description_present_flag = b.read_bool()?;
     let mut color_primaries = 2;
     let mut transfer_characteristics = 2;
@@ -264,7 +264,7 @@ fn color_config(b: &mut BitReader, seq_profile: u8) -> Result<ColorConfig> {
     let chroma_sample_position;
     let separate_uv_delta_q;
     let color_range;
-    if mono_chrome {
+    if monochrome {
         color_range = b.read_u8(1)?;
         chroma_subsampling = (false, false);
         chroma_sample_position = 0;
@@ -293,7 +293,7 @@ fn color_config(b: &mut BitReader, seq_profile: u8) -> Result<ColorConfig> {
         } else {
             chroma_subsampling = (true, false);
         }
-        debug_assert!(!mono_chrome);
+        debug_assert!(!monochrome);
         chroma_sample_position = if chroma_subsampling.0 && chroma_subsampling.1 { b.read_u8(2)? } else { 0 };
         separate_uv_delta_q = b.read_bool()?;
     }
@@ -304,7 +304,7 @@ fn color_config(b: &mut BitReader, seq_profile: u8) -> Result<ColorConfig> {
         separate_uv_delta_q,
         color_range,
         bit_depth,
-        mono_chrome,
+        monochrome,
 
         color_primaries,
         transfer_characteristics,
