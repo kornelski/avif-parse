@@ -268,6 +268,38 @@ pub(crate) struct AV1ConfigBox {
     pub(crate) config_obus: TryVec<u8>,
 }
 
+/// Content Light Level Information (CEA-861.3).
+///
+/// Signals the content light level of HDR content.
+/// See ISOBMFF § 12.1.5.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContentLightLevel {
+    /// Maximum light level of any single pixel (MaxCLL), in cd/m².
+    pub max_content_light_level: u16,
+    /// Maximum frame-average light level (MaxFALL), in cd/m².
+    pub max_pic_average_light_level: u16,
+}
+
+/// Mastering Display Colour Volume (SMPTE ST 2086).
+///
+/// Describes the color volume of the mastering display used to author the content.
+/// See ISOBMFF § 12.1.5.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MasteringDisplayColourVolume {
+    /// Display primaries in CIE 1931 xy chromaticity, encoded as the value × 50000.
+    /// For example, D65 white (0.3127, 0.3290) encodes as (15635, 16450).
+    /// Order: \[green, blue, red\] per SMPTE ST 2086.
+    pub primaries: [(u16, u16); 3],
+    /// White point in CIE 1931 xy chromaticity, same encoding as `primaries`.
+    pub white_point: (u16, u16),
+    /// Maximum luminance of the mastering display in cd/m² × 10000.
+    /// For example, 1000 cd/m² = 10_000_000.
+    pub max_luminance: u32,
+    /// Minimum luminance of the mastering display in cd/m² × 10000.
+    /// For example, 0.005 cd/m² = 50.
+    pub min_luminance: u32,
+}
+
 #[derive(Debug, Default)]
 pub struct AvifData {
     /// AV1 data for the color channels.
@@ -282,6 +314,10 @@ pub struct AvifData {
     ///
     /// See `prem` in MIAF § 7.3.5.2
     pub premultiplied_alpha: bool,
+    /// Content light level from the container's `clli` property, if present.
+    pub content_light_level: Option<ContentLightLevel>,
+    /// Mastering display colour volume from the container's `mdcv` property, if present.
+    pub mastering_display: Option<MasteringDisplayColourVolume>,
 }
 
 impl AvifData {
@@ -791,6 +827,19 @@ pub fn read_avif<T: Read>(f: &mut T) -> Result<AvifData> {
             })
         });
 
+    // Extract HDR metadata properties for the primary item
+    let mut content_light_level = None;
+    let mut mastering_display = None;
+    for prop in meta.properties.iter() {
+        if prop.item_id == meta.primary_item_id {
+            match &prop.property {
+                ItemProperty::ContentLightLevel(cll) => content_light_level = Some(*cll),
+                ItemProperty::MasteringDisplayColourVolume(mdcv) => mastering_display = Some(*mdcv),
+                _ => {},
+            }
+        }
+    }
+
     let mut context = AvifData {
         premultiplied_alpha: alpha_item_id.map_or(false, |alpha_item_id| {
             meta.item_references.iter().any(|iref| {
@@ -799,6 +848,8 @@ pub fn read_avif<T: Read>(f: &mut T) -> Result<AvifData> {
                     && iref.item_type == b"prem"
             })
         }),
+        content_light_level,
+        mastering_display,
         ..Default::default()
     };
 
@@ -1060,6 +1111,8 @@ fn read_iprp<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<AssociatedPrope
 pub(crate) enum ItemProperty {
     Channels(ArrayVec<u8, 16>),
     AuxiliaryType(AuxiliaryTypeProperty),
+    ContentLightLevel(ContentLightLevel),
+    MasteringDisplayColourVolume(MasteringDisplayColourVolume),
     Unsupported,
 }
 
@@ -1068,6 +1121,8 @@ impl TryClone for ItemProperty {
         Ok(match self {
             Self::Channels(val) => Self::Channels(val.clone()),
             Self::AuxiliaryType(val) => Self::AuxiliaryType(val.try_clone()?),
+            Self::ContentLightLevel(val) => Self::ContentLightLevel(*val),
+            Self::MasteringDisplayColourVolume(val) => Self::MasteringDisplayColourVolume(*val),
             Self::Unsupported => Self::Unsupported,
         })
     }
@@ -1124,6 +1179,8 @@ fn read_ipco<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<ItemProperty>> 
         properties.push(match b.head.name {
             BoxType::PixelInformationBox => ItemProperty::Channels(read_pixi(&mut b)?),
             BoxType::AuxiliaryTypeProperty => ItemProperty::AuxiliaryType(read_auxc(&mut b)?),
+            BoxType::ContentLightLevelBox => ItemProperty::ContentLightLevel(read_clli(&mut b)?),
+            BoxType::MasteringDisplayColourVolumeBox => ItemProperty::MasteringDisplayColourVolume(read_mdcv(&mut b)?),
             _ => {
                 skip_box_remain(&mut b)?;
                 ItemProperty::Unsupported
@@ -1186,6 +1243,38 @@ fn read_auxc<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<AuxiliaryTypeProperty>
     let aux_data = src.read_into_try_vec()?;
 
     Ok(AuxiliaryTypeProperty { aux_data })
+}
+
+/// Parse a Content Light Level Information property box (`clli`).
+/// See ISOBMFF § 12.1.5 / CEA-861.3. NOT a FullBox.
+fn read_clli<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<ContentLightLevel> {
+    let max_content_light_level = be_u16(src)?;
+    let max_pic_average_light_level = be_u16(src)?;
+    skip_box_remain(src)?;
+    Ok(ContentLightLevel {
+        max_content_light_level,
+        max_pic_average_light_level,
+    })
+}
+
+/// Parse a Mastering Display Colour Volume property box (`mdcv`).
+/// See ISOBMFF § 12.1.5 / SMPTE ST 2086. NOT a FullBox.
+fn read_mdcv<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<MasteringDisplayColourVolume> {
+    let primaries = [
+        (be_u16(src)?, be_u16(src)?),
+        (be_u16(src)?, be_u16(src)?),
+        (be_u16(src)?, be_u16(src)?),
+    ];
+    let white_point = (be_u16(src)?, be_u16(src)?);
+    let max_luminance = be_u32(src)?;
+    let min_luminance = be_u32(src)?;
+    skip_box_remain(src)?;
+    Ok(MasteringDisplayColourVolume {
+        primaries,
+        white_point,
+        max_luminance,
+        min_luminance,
+    })
 }
 
 /// Parse an item location box inside a meta box

@@ -1,7 +1,7 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
-use avif_parse::Error;
+use avif_parse::{ContentLightLevel, MasteringDisplayColourVolume, Error};
 use std::fs::File;
 
 static IMAGE_AVIF: &str = "av1-avif/testFiles/Microsoft/Monochrome.avif";
@@ -73,4 +73,53 @@ fn test_dir(dir: &str) {
         }
     }
     assert_eq!(0, errors);
+}
+
+// Fixture files generated with avif-serialize 0.8.7 (feat/hdr-metadata branch).
+// Each is a minimal AVIF container (64×64, 8-bit, profile 0) with HDR metadata properties.
+
+#[test]
+fn parse_clli() {
+    let input = &mut File::open("tests/hdr-clli.avif").expect("fixture missing");
+    let parsed = avif_parse::read_avif(input).expect("parse failed");
+
+    let cll = parsed.content_light_level.expect("clli missing");
+    assert_eq!(cll.max_content_light_level, 1000);
+    assert_eq!(cll.max_pic_average_light_level, 400);
+    assert!(parsed.mastering_display.is_none());
+}
+
+#[test]
+fn parse_mdcv() {
+    let input = &mut File::open("tests/hdr-mdcv.avif").expect("fixture missing");
+    let parsed = avif_parse::read_avif(input).expect("parse failed");
+
+    let mdcv = parsed.mastering_display.expect("mdcv missing");
+    // BT.2020 primaries
+    assert_eq!(mdcv.primaries, [(8500, 39850), (6550, 2300), (35400, 14600)]);
+    // D65 white point
+    assert_eq!(mdcv.white_point, (15635, 16450));
+    assert_eq!(mdcv.max_luminance, 10_000_000); // 1000 cd/m²
+    assert_eq!(mdcv.min_luminance, 50);          // 0.005 cd/m²
+    assert!(parsed.content_light_level.is_none());
+}
+
+#[test]
+fn parse_clli_and_mdcv() {
+    let input = &mut File::open("tests/hdr-clli-mdcv.avif").expect("fixture missing");
+    let parsed = avif_parse::read_avif(input).expect("parse failed");
+
+    let cll = parsed.content_light_level.expect("clli missing");
+    assert_eq!(cll, ContentLightLevel {
+        max_content_light_level: 4000,
+        max_pic_average_light_level: 1000,
+    });
+
+    let mdcv = parsed.mastering_display.expect("mdcv missing");
+    assert_eq!(mdcv, MasteringDisplayColourVolume {
+        primaries: [(8500, 39850), (6550, 2300), (35400, 14600)],
+        white_point: (15635, 16450),
+        max_luminance: 40_000_000, // 4000 cd/m²
+        min_luminance: 50,
+    });
 }
