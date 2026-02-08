@@ -121,6 +121,8 @@ box_database!(
     ColorInformationBox               0x636f_6c72, // "colr"
     PixelInformationBox               0x7069_7869, // "pixi"
     AuxiliaryTypeProperty             0x6175_7843, // "auxC"
+    ContentLightLevelBox              0x636c_6c69, // "clli"
+    MasteringDisplayColourVolumeBox   0x6d64_6376, // "mdcv"
     SampleTableBox                    0x7374_626c, // "stbl"
     SampleDescriptionBox              0x7374_7364, // "stsd"
     TimeToSampleBox                   0x7374_7473, // "stts"
