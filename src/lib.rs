@@ -23,6 +23,7 @@ mod boxes;
 use crate::boxes::{BoxType, FourCC};
 
 /// This crate can be used from C.
+#[cfg(feature = "c_api")]
 pub mod c_api;
 
 // Arbitrary buffer size limit used for raw read_bufs on a box.
@@ -102,14 +103,8 @@ impl<T: Read> Read for OffsetReader<'_, T> {
     }
 }
 
-#[doc(hidden)]
-pub type TryVec<T> = fallible_collections::TryVec<T>;
-#[doc(hidden)]
-pub type TryString = fallible_collections::TryVec<u8>;
-#[doc(hidden)]
-pub type TryHashMap<K, V> = std::collections::HashMap<K, V>;
-#[doc(hidden)]
-pub type TryBox<T> = fallible_collections::TryBox<T>;
+pub(crate) type TryVec<T> = fallible_collections::TryVec<T>;
+pub(crate) type TryString = fallible_collections::TryVec<u8>;
 
 // To ensure we don't use stdlib allocating types by accident
 #[allow(dead_code)]
@@ -301,6 +296,7 @@ pub struct MasteringDisplayColourVolume {
 }
 
 #[derive(Debug, Default)]
+#[non_exhaustive]
 pub struct AvifData {
     /// AV1 data for the color channels.
     ///
@@ -841,7 +837,7 @@ pub fn read_avif<T: Read>(f: &mut T) -> Result<AvifData> {
     }
 
     let mut context = AvifData {
-        premultiplied_alpha: alpha_item_id.map_or(false, |alpha_item_id| {
+        premultiplied_alpha: alpha_item_id.is_some_and(|alpha_item_id| {
             meta.item_references.iter().any(|iref| {
                 iref.from_item_id == meta.primary_item_id
                     && iref.to_item_id == alpha_item_id
@@ -1095,13 +1091,13 @@ fn read_iprp<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<AssociatedPrope
             0 => continue,
             x => x as usize - 1,
         };
-        if let Some(prop) = properties.get(index) {
-            if *prop != ItemProperty::Unsupported {
-                associated.push(AssociatedProperty {
-                    item_id: a.item_id,
-                    property: prop.try_clone()?,
-                })?;
-            }
+        if let Some(prop) = properties.get(index)
+            && *prop != ItemProperty::Unsupported
+        {
+            associated.push(AssociatedProperty {
+                item_id: a.item_id,
+                property: prop.try_clone()?,
+            })?;
         }
     }
     Ok(associated)
@@ -1393,7 +1389,7 @@ fn read_ftyp<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<FileTypeBox> {
     let major = be_u32(src)?;
     let minor = be_u32(src)?;
     let bytes_left = src.bytes_left();
-    if bytes_left % 4 != 0 {
+    if !bytes_left.is_multiple_of(4) {
         return Err(Error::InvalidData("invalid ftyp size"));
     }
     // Is a brand_count of zero valid?

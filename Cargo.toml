@@ -1,6 +1,6 @@
 [package]
 name = "avif-parse"
-version = "1.4.0"
+version = "2.0.0"
 authors = [
   "Kornel Lesiński <kornel@geekhood.net>",
   "Ralph Giles <giles@mozilla.com>",
@@ -8,7 +8,7 @@ authors = [
   "Alfredo Yang <ayang@mozilla.com>",
   "Jon Bauman <jbauman@mozilla.com>",
 ]
-edition = "2021"
+edition = "2024"
 description = "Parser for AVIF image files"
 documentation = "https://docs.rs/avif-parse/"
 license = "MPL-2.0"
@@ -17,7 +17,7 @@ repository = "https://github.com/kornelski/avif-parse"
 readme = "README.md"
 include = ["/README.md", "/Cargo.toml", "/LICENSE", "/src/*.rs", "/avif_parse.h"]
 keywords = ["demuxer", "image", "parser", "heif"]
-rust-version = "1.69"
+rust-version = "1.90"
 
 [lib]
 crate-type = ["rlib", "staticlib"]
@@ -35,8 +35,8 @@ env_logger = "0.11"
 walkdir = "2.4.0"
 
 [features]
-# Obsolete (fallible allocations are used anyway)
-mp4parse_fallible = []
+# Export symbols for C
+c_api = []
 
 [badges]
 maintenance = { status = "passively-maintained" }

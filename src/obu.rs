@@ -4,7 +4,7 @@
 use crate::{Error, Result};
 
 use bitreader::BitReader;
-use std::num::{NonZeroU32, NonZeroU8};
+use std::num::{NonZeroU8, NonZeroU32};
 
 #[derive(Debug, Clone)]
 struct Header {
