@@ -69,30 +69,19 @@ impl_to_usize_from!(u8);
 impl_to_usize_from!(u16);
 impl_to_usize_from!(u32);
 
-/// Indicate the current offset (i.e., bytes already read) in a reader
-trait Offset {
-    fn offset(&self) -> u64;
-}
-
 /// Wraps a reader to track the current offset
-struct OffsetReader<'a, T: ?Sized> {
-    reader: &'a mut T,
+struct OffsetReader<T> {
+    reader: T,
     offset: u64,
 }
 
-impl<'a, T: ?Sized> OffsetReader<'a, T> {
-    fn new(reader: &'a mut T) -> Self {
+impl<T> OffsetReader<T> {
+    fn new(reader: T) -> Self {
         Self { reader, offset: 0 }
     }
 }
 
-impl<T: ?Sized> Offset for OffsetReader<'_, T> {
-    fn offset(&self) -> u64 {
-        self.offset
-    }
-}
-
-impl<T: Read + ?Sized> Read for OffsetReader<'_, T> {
+impl<T: Read> Read for OffsetReader<T> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let bytes_read = self.reader.read(buf)?;
         self.offset = self
@@ -550,12 +539,12 @@ impl ExtentRange {
 }
 
 /// See ISO 14496-12:2015 § 4.2
-struct BMFFBox<'a, T> {
+struct BMFFBox<T> {
     head: BoxHeader,
-    content: Take<&'a mut T>,
+    content: Take<T>,
 }
 
-impl<T: Read> BMFFBox<'_, T> {
+impl<T: Read> BMFFBox<T> {
     fn read_into_try_vec(&mut self) -> std::io::Result<TryVec<u8>> {
         let mut vec = std::vec::Vec::new();
         vec.try_reserve_exact(self.content.limit() as usize)
@@ -587,21 +576,21 @@ fn box_read_to_end_oom() {
     assert!(src.read_into_try_vec().is_err());
 }
 
-struct BoxIter<'a, T> {
-    src: &'a mut T,
+struct BoxIter<T> {
+    src: T,
 }
 
-impl<T: Read> BoxIter<'_, T> {
-    fn new(src: &mut T) -> BoxIter<'_, T> {
+impl<T: Read> BoxIter<T> {
+    fn new(src: T) -> BoxIter<T> {
         BoxIter { src }
     }
 
-    fn next_box(&mut self) -> Result<Option<BMFFBox<'_, T>>> {
-        let r = read_box_header(self.src);
+    fn next_box(&mut self) -> Result<Option<BMFFBox<&mut T>>> {
+        let r = read_box_header(&mut self.src);
         match r {
             Ok(h) => Ok(Some(BMFFBox {
                 head: h,
-                content: self.src.take(h.size - h.offset),
+                content: self.src.by_ref().take(h.size - h.offset),
             })),
             Err(Error::UnexpectedEOF) => Ok(None),
             Err(e) => Err(e),
@@ -609,19 +598,19 @@ impl<T: Read> BoxIter<'_, T> {
     }
 }
 
-impl<T: Read> Read for BMFFBox<'_, T> {
+impl<T: Read> Read for BMFFBox<T> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         self.content.read(buf)
     }
 }
 
-impl<T: Offset> Offset for BMFFBox<'_, T> {
+impl<T> BMFFBox<&mut OffsetReader<T>> {
     fn offset(&self) -> u64 {
-        self.content.get_ref().offset()
+        self.content.get_ref().offset
     }
 }
 
-impl<T: Read> BMFFBox<'_, T> {
+impl<T: Read> BMFFBox<T> {
     fn bytes_left(&self) -> u64 {
         self.content.limit()
     }
@@ -630,12 +619,12 @@ impl<T: Read> BMFFBox<'_, T> {
         &self.head
     }
 
-    fn box_iter(&mut self) -> BoxIter<'_, Self> {
+    fn box_iter(&mut self) -> BoxIter<&mut Self> {
         BoxIter::new(self)
     }
 }
 
-impl<T> Drop for BMFFBox<'_, T> {
+impl<T> Drop for BMFFBox<T> {
     fn drop(&mut self) {
         if self.content.limit() > 0 {
             let name: FourCC = From::from(self.head.name);
@@ -722,7 +711,7 @@ fn read_fullbox_version_no_flags<T: ReadBytesExt>(src: &mut T) -> Result<u8> {
 }
 
 /// Skip over the entire contents of a box.
-fn skip_box_content<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<()> {
+fn skip_box_content<T: Read>(src: &mut BMFFBox<T>) -> Result<()> {
     // Skip the contents of unknown chunks.
     let to_skip = {
         let header = src.get_header();
@@ -737,7 +726,7 @@ fn skip_box_content<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<()> {
 }
 
 /// Skip over the remain data of a box.
-fn skip_box_remain<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<()> {
+fn skip_box_remain<T: Read>(src: &mut BMFFBox<T>) -> Result<()> {
     let remain = {
         let header = src.get_header();
         let len = src.bytes_left();
@@ -751,9 +740,9 @@ fn skip_box_remain<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<()> {
 ///
 /// Metadata is accumulated and returned in [`AvifData`] struct,
 pub fn read_avif<T: Read + ?Sized>(f: &mut T) -> Result<AvifData> {
-    let mut f = OffsetReader::new(f);
+    let f = OffsetReader::new(f);
 
-    let mut iter = BoxIter::new(&mut f);
+    let mut iter = BoxIter::new(f);
 
     // 'ftyp' box must occur first; see ISO 14496-12:2015 § 4.3.1
     if let Some(mut b) = iter.next_box()? {
@@ -886,7 +875,7 @@ pub fn read_avif<T: Read + ?Sized>(f: &mut T) -> Result<AvifData> {
 /// Currently requires the primary item to be an av01 item type and generates
 /// an error otherwise.
 /// See ISO 14496-12:2015 § 8.11.1
-fn read_avif_meta<T: Read + Offset>(src: &mut BMFFBox<'_, T>) -> Result<AvifInternalMeta> {
+fn read_avif_meta<T: Read>(src: &mut BMFFBox<T>) -> Result<AvifInternalMeta> {
     let version = read_fullbox_version_no_flags(src)?;
 
     if version != 0 {
@@ -958,7 +947,7 @@ fn read_avif_meta<T: Read + Offset>(src: &mut BMFFBox<'_, T>) -> Result<AvifInte
 
 /// Parse a Primary Item Box
 /// See ISO 14496-12:2015 § 8.11.4
-fn read_pitm<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<u32> {
+fn read_pitm<T: Read>(src: &mut BMFFBox<T>) -> Result<u32> {
     let version = read_fullbox_version_no_flags(src)?;
 
     let item_id = match version {
@@ -972,7 +961,7 @@ fn read_pitm<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<u32> {
 
 /// Parse an Item Information Box
 /// See ISO 14496-12:2015 § 8.11.6
-fn read_iinf<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<ItemInfoEntry>> {
+fn read_iinf<T: Read>(src: &mut BMFFBox<T>) -> Result<TryVec<ItemInfoEntry>> {
     let version = read_fullbox_version_no_flags(src)?;
 
     match version {
@@ -1003,7 +992,7 @@ fn read_iinf<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<ItemInfoEntry>>
 
 /// Parse an Item Info Entry
 /// See ISO 14496-12:2015 § 8.11.6.2
-fn read_infe<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<ItemInfoEntry> {
+fn read_infe<T: Read>(src: &mut BMFFBox<T>) -> Result<ItemInfoEntry> {
     // According to the standard, it seems the flags field should be 0, but
     // at least one sample AVIF image has a nonzero value.
     let (version, _) = read_fullbox_extra(src)?;
@@ -1030,7 +1019,7 @@ fn read_infe<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<ItemInfoEntry> {
     Ok(ItemInfoEntry { item_id, item_type })
 }
 
-fn read_iref<T: Read>(src: &mut BMFFBox<'_, T>, item_references: &mut TryVec<SingleItemTypeReferenceBox>) -> Result<()> {
+fn read_iref<T: Read>(src: &mut BMFFBox<T>, item_references: &mut TryVec<SingleItemTypeReferenceBox>) -> Result<()> {
     let version = read_fullbox_version_no_flags(src)?;
     if version > 1 {
         return Err(Error::Unsupported("iref version"));
@@ -1064,7 +1053,7 @@ fn read_iref<T: Read>(src: &mut BMFFBox<'_, T>, item_references: &mut TryVec<Sin
     Ok(())
 }
 
-fn read_iprp<T: Read>(src: &mut BMFFBox<'_, T>, associated: &mut TryVec<AssociatedProperty>) -> Result<()> {
+fn read_iprp<T: Read>(src: &mut BMFFBox<T>, associated: &mut TryVec<AssociatedProperty>) -> Result<()> {
     let mut iter = src.box_iter();
     let mut properties = TryVec::new();
     let mut associations = TryVec::new();
@@ -1131,7 +1120,7 @@ pub(crate) struct AssociatedProperty {
     pub property: ItemProperty,
 }
 
-fn read_ipma<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<Association>> {
+fn read_ipma<T: Read>(src: &mut BMFFBox<T>) -> Result<TryVec<Association>> {
     let (version, flags) = read_fullbox_extra(src)?;
 
     let mut associations = TryVec::new();
@@ -1161,7 +1150,7 @@ fn read_ipma<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<Association>> {
     Ok(associations)
 }
 
-fn read_ipco<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<ItemProperty>> {
+fn read_ipco<T: Read>(src: &mut BMFFBox<T>) -> Result<TryVec<ItemProperty>> {
     let mut properties = TryVec::new();
 
     let mut iter = src.box_iter();
@@ -1181,7 +1170,7 @@ fn read_ipco<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<ItemProperty>> 
     Ok(properties)
 }
 
-fn read_pixi<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<ArrayVec<u8, 16>> {
+fn read_pixi<T: Read>(src: &mut BMFFBox<T>) -> Result<ArrayVec<u8, 16>> {
     let version = read_fullbox_version_no_flags(src)?;
     if version != 0 {
         return Err(Error::Unsupported("pixi version"));
@@ -1225,7 +1214,7 @@ impl TryClone for AuxiliaryTypeProperty {
     }
 }
 
-fn read_auxc<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<AuxiliaryTypeProperty> {
+fn read_auxc<T: Read>(src: &mut BMFFBox<T>) -> Result<AuxiliaryTypeProperty> {
     let version = read_fullbox_version_no_flags(src)?;
     if version != 0 {
         return Err(Error::Unsupported("auxC version"));
@@ -1238,7 +1227,7 @@ fn read_auxc<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<AuxiliaryTypeProperty>
 
 /// Parse a Content Light Level Information property box (`clli`).
 /// See ISOBMFF § 12.1.5 / CEA-861.3. NOT a FullBox.
-fn read_clli<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<ContentLightLevel> {
+fn read_clli<T: Read>(src: &mut BMFFBox<T>) -> Result<ContentLightLevel> {
     let max_content_light_level = be_u16(src)?;
     let max_pic_average_light_level = be_u16(src)?;
     skip_box_remain(src)?;
@@ -1250,7 +1239,7 @@ fn read_clli<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<ContentLightLevel> {
 
 /// Parse a Mastering Display Colour Volume property box (`mdcv`).
 /// See ISOBMFF § 12.1.5 / SMPTE ST 2086. NOT a FullBox.
-fn read_mdcv<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<MasteringDisplayColourVolume> {
+fn read_mdcv<T: Read>(src: &mut BMFFBox<T>) -> Result<MasteringDisplayColourVolume> {
     let primaries = [
         (be_u16(src)?, be_u16(src)?),
         (be_u16(src)?, be_u16(src)?),
@@ -1270,7 +1259,7 @@ fn read_mdcv<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<MasteringDisplayColour
 
 /// Parse an item location box inside a meta box
 /// See ISO 14496-12:2015 § 8.11.3
-fn read_iloc<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<ItemLocationBoxItem>> {
+fn read_iloc<T: Read>(src: &mut BMFFBox<T>) -> Result<TryVec<ItemLocationBoxItem>> {
     let version: IlocVersion = read_fullbox_version_no_flags(src)?.try_into()?;
 
     let iloc = src.read_into_try_vec()?;
@@ -1380,7 +1369,7 @@ fn read_iloc<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<ItemLocationBox
 
 /// Parse an ftyp box.
 /// See ISO 14496-12:2015 § 4.3
-fn read_ftyp<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<FileTypeBox> {
+fn read_ftyp<T: Read>(src: &mut BMFFBox<T>) -> Result<FileTypeBox> {
     let major = be_u32(src)?;
     let minor = be_u32(src)?;
     let bytes_left = src.bytes_left();

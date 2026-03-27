@@ -1,6 +1,6 @@
 [package]
 name = "avif-parse"
-version = "2.0.0"
+version = "2.1.0"
 authors = [
   "Kornel Lesiński <kornel@geekhood.net>",
   "Ralph Giles <giles@mozilla.com>",
