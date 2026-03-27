@@ -219,9 +219,6 @@ struct BoxHeader {
     size: u64,
     /// Offset to the start of the contained data (or header size).
     offset: u64,
-    /// Uuid for extended type.
-    #[allow(unused)]
-    uuid: Option<[u8; 16]>,
 }
 
 impl BoxHeader {
@@ -572,7 +569,7 @@ impl<T: Read> BMFFBox<'_, T> {
 fn box_read_to_end() {
     let tmp = &mut b"1234567890".as_slice();
     let mut src = BMFFBox {
-        head: BoxHeader { name: BoxType::FileTypeBox, size: 5, offset: 0, uuid: None },
+        head: BoxHeader { name: BoxType::FileTypeBox, size: 5, offset: 0 },
         content: <_ as Read>::take(tmp, 5),
     };
     let buf = src.read_into_try_vec().unwrap();
@@ -584,7 +581,7 @@ fn box_read_to_end() {
 fn box_read_to_end_oom() {
     let tmp = &mut b"1234567890".as_slice();
     let mut src = BMFFBox {
-        head: BoxHeader { name: BoxType::FileTypeBox, size: 5, offset: 0, uuid: None },
+        head: BoxHeader { name: BoxType::FileTypeBox, size: 5, offset: 0 },
         content: <_ as Read>::take(tmp, usize::MAX.try_into().expect("usize < u64")),
     };
     assert!(src.read_into_try_vec().is_err());
@@ -679,7 +676,7 @@ fn read_box_header<T: ReadBytesExt>(src: &mut T) -> Result<BoxHeader> {
         1 => BoxHeader::MIN_LARGE_SIZE,
         _ => BoxHeader::MIN_SIZE,
     };
-    let uuid = if name == BoxType::UuidBox {
+    let _uuid = if name == BoxType::UuidBox {
         if size >= offset + 16 {
             let mut buffer = [0u8; 16];
             let count = src.read(&mut buffer)?;
@@ -698,7 +695,7 @@ fn read_box_header<T: ReadBytesExt>(src: &mut T) -> Result<BoxHeader> {
         None
     };
     assert!(offset <= size);
-    Ok(BoxHeader { name, size, offset, uuid })
+    Ok(BoxHeader { name, size, offset })
 }
 
 /// Parse the extra header fields for a full box.
