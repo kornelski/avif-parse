@@ -895,11 +895,9 @@ fn init_data(meta: &AvifInternalMeta) -> AvifData {
     }
 }
 
-fn read_avif_body<R: Read>(header: AvifHeader<R>) -> Result<AvifData> {
-    let AvifHeader { meta, offset_reader, mut mdats, data: mut context } = header;
-
-    let mut iter = BoxIter::new(offset_reader);
-    while let Some(mut b) = iter.next_box()? {
+fn next_data_box<R: Read>(iter: &mut BoxIter<OffsetReader<R>>) -> Result<MediaDataBox> {
+    loop {
+        let mut b = iter.next_box()?.ok_or(Error::InvalidData("No MediaDataBox"))?;
         match b.head.name {
             BoxType::MetadataBox => {
                 return Err(Error::InvalidData("There should be zero or one meta boxes per ISO 14496-12:2015 § 8.11.1.1"));
@@ -908,20 +906,25 @@ fn read_avif_body<R: Read>(header: AvifHeader<R>) -> Result<AvifData> {
                 if b.bytes_left() > 0 {
                     let offset = b.offset();
                     let data = b.read_into_try_vec()?;
-                    mdats.push(MediaDataBox { offset, data })?;
+                    return Ok(MediaDataBox { offset, data });
                 }
             },
             _ => skip_box_content(&mut b)?,
         }
         check_parser_state(&b.content)?;
     }
+}
 
-    // load data of relevant items
+fn read_avif_body<R: Read>(header: AvifHeader<R>) -> Result<AvifData> {
+    let AvifHeader { meta, offset_reader, mdats, data: mut context } = header;
+
+    let mut iter = BoxIter::new(offset_reader);
+    let mut sorted_extents = TryVec::new();
     for loc in meta.iloc_items.iter() {
-        let item_data = if loc.item_id == meta.primary_item_id {
-            &mut context.primary_item
+        let is_primary = if loc.item_id == meta.primary_item_id {
+            true
         } else if Some(loc.item_id) == meta.alpha_item_id {
-            context.alpha_item.get_or_insert_with(TryVec::new)
+            false
         } else {
             continue;
         };
@@ -929,23 +932,40 @@ fn read_avif_body<R: Read>(header: AvifHeader<R>) -> Result<AvifData> {
         if loc.construction_method != ConstructionMethod::File {
             return Err(Error::Unsupported("unsupported construction_method"));
         }
-        for extent in loc.extents.iter() {
-            let mut found = false;
-            // try to find an overlapping mdat
-            for mdat in mdats.iter_mut() {
-                if item_data.is_empty() && mdat.matches_extent(&extent.extent_range) {
-                    *item_data = std::mem::take(&mut mdat.data);
-                    found = true;
-                    break;
-                } else if mdat.contains_extent(&extent.extent_range) {
-                    mdat.read_extent(&extent.extent_range, item_data)?;
-                    found = true;
-                    break;
-                }
+
+        for extent in &loc.extents {
+            sorted_extents.push((is_primary, extent.extent_range.clone()))?;
+        }
+    }
+
+    sorted_extents.sort_unstable_by_key(|(_, e)| e.start());
+    let mut mdats = mdats.into_iter().fuse(); // reading automatically sorted mdats by offset
+    let mut current_mdat: Option<MediaDataBox> = None;
+    for (is_primary, range) in sorted_extents {
+        // try to find an overlapping mdat
+        let mdat = loop {
+            match &mut current_mdat {
+                Some(mdat) if mdat.contains_extent(&range) => break mdat,
+                _ => {
+                    current_mdat = mdats.next();
+                    if current_mdat.is_none() {
+                        current_mdat = Some(next_data_box(&mut iter)?);
+                    }
+                },
             }
-            if !found {
-                return Err(Error::InvalidData("iloc contains an extent that is not in mdat"));
-            }
+        };
+
+        let item_data = if is_primary {
+            &mut context.primary_item
+        } else {
+            context.alpha_item.get_or_insert_with(TryVec::new)
+        };
+        if item_data.is_empty() && mdat.matches_extent(&range) {
+            *item_data = std::mem::take(&mut mdat.data);
+        } else if mdat.contains_extent(&range) {
+            mdat.read_extent(&range, item_data)?;
+        } else {
+            return Err(Error::InvalidData("iloc contains an extent that is not in mdat"));
         }
     }
 
