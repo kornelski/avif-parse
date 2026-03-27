@@ -866,8 +866,8 @@ pub fn read_avif<T: Read>(f: &mut T) -> Result<AvifData> {
             let mut found = false;
             // try to find an overlapping mdat
             for mdat in mdats.iter_mut() {
-                if mdat.matches_extent(&extent.extent_range) {
-                    item_data.append(&mut mdat.data)?;
+                if item_data.is_empty() && mdat.matches_extent(&extent.extent_range) {
+                    *item_data = std::mem::take(&mut mdat.data);
                     found = true;
                     break;
                 } else if mdat.contains_extent(&extent.extent_range) {
@@ -924,10 +924,10 @@ fn read_avif_meta<T: Read + Offset>(src: &mut BMFFBox<'_, T>) -> Result<AvifInte
                 primary_item_id = Some(read_pitm(&mut b)?);
             },
             BoxType::ImageReferenceBox => {
-                item_references.append(&mut read_iref(&mut b)?)?;
+                read_iref(&mut b, &mut item_references)?;
             },
             BoxType::ImagePropertiesBox => {
-                properties = read_iprp(&mut b)?;
+                read_iprp(&mut b, &mut properties)?;
             },
             _ => skip_box_content(&mut b)?,
         }
@@ -1033,8 +1033,7 @@ fn read_infe<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<ItemInfoEntry> {
     Ok(ItemInfoEntry { item_id, item_type })
 }
 
-fn read_iref<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<SingleItemTypeReferenceBox>> {
-    let mut item_references = TryVec::new();
+fn read_iref<T: Read>(src: &mut BMFFBox<'_, T>, item_references: &mut TryVec<SingleItemTypeReferenceBox>) -> Result<()> {
     let version = read_fullbox_version_no_flags(src)?;
     if version > 1 {
         return Err(Error::Unsupported("iref version"));
@@ -1065,10 +1064,10 @@ fn read_iref<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<SingleItemTypeR
         }
         check_parser_state(&b.content)?;
     }
-    Ok(item_references)
+    Ok(())
 }
 
-fn read_iprp<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<AssociatedProperty>> {
+fn read_iprp<T: Read>(src: &mut BMFFBox<'_, T>, associated: &mut TryVec<AssociatedProperty>) -> Result<()> {
     let mut iter = src.box_iter();
     let mut properties = TryVec::new();
     let mut associations = TryVec::new();
@@ -1085,7 +1084,6 @@ fn read_iprp<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<AssociatedPrope
         }
     }
 
-    let mut associated = TryVec::new();
     for a in associations {
         let index = match a.property_index {
             0 => continue,
@@ -1100,7 +1098,7 @@ fn read_iprp<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<TryVec<AssociatedPrope
             })?;
         }
     }
-    Ok(associated)
+    Ok(())
 }
 
 #[derive(Debug, PartialEq)]
