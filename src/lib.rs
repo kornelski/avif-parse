@@ -1213,9 +1213,9 @@ impl AuxiliaryTypeProperty {
     #[must_use]
     pub fn type_subtype(&self) -> (&[u8], &[u8]) {
         let split = self.aux_data.iter().position(|&b| b == b'\0')
-            .map(|pos| self.aux_data.split_at(pos));
+            .and_then(|pos| self.aux_data.split_at_checked(pos));
         if let Some((aux_type, rest)) = split {
-            (aux_type, &rest[1..])
+            (aux_type, &rest.get(1..).unwrap_or(rest))
         } else {
             (&self.aux_data, &[])
         }
