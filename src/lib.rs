@@ -13,7 +13,7 @@ use byteorder::ReadBytesExt;
 use fallible_collections::{TryClone, TryReserveError};
 use std::convert::{TryFrom, TryInto as _};
 
-use std::io::{Read, Take};
+use std::io::{BufRead, Read, Take};
 use std::num::NonZeroU32;
 use std::ops::{Range, RangeFrom};
 
@@ -281,6 +281,7 @@ pub struct MasteringDisplayColourVolume {
     pub min_luminance: u32,
 }
 
+/// Buffered AV1 data
 #[derive(Debug, Default)]
 #[non_exhaustive]
 pub struct AvifData {
@@ -303,6 +304,7 @@ pub struct AvifData {
 }
 
 impl AvifData {
+    /// It can be used with `&mut &[u8]`. Otherwise it's best to use [`BufReader`](std::io::BufReader).
     pub fn from_reader<R: Read>(reader: &mut R) -> Result<Self> {
         read_avif(reader)
     }
@@ -315,6 +317,45 @@ impl AvifData {
     /// Parses AV1 data to get basic properties about the alpha channel, if any
     pub fn alpha_item_metadata(&self) -> Result<Option<AV1Metadata>> {
         self.alpha_item.as_deref().map(AV1Metadata::parse_av1_bitstream).transpose()
+    }
+
+    #[must_use]
+    pub fn content_light_level(&self) -> Option<ContentLightLevel> {
+        self.content_light_level
+    }
+
+    #[must_use]
+    pub fn mastering_display(&self) -> Option<MasteringDisplayColourVolume> {
+        self.mastering_display
+    }
+}
+
+/// Parse AVIF header
+impl<BufReader: BufRead> AvifHeader<BufReader> {
+    /// Can read from a `&mut &[u8]`, `io::Cursor` or [`BufReader`](std::io::BufReader).
+    pub fn from_reader(reader: BufReader) -> Result<Self> {
+        read_avif_header(reader)
+    }
+}
+
+impl<R: Read> AvifHeader<R> {
+    /// Read the rest of the file
+    pub fn read_avif(self) -> Result<AvifData> {
+        read_avif_body(self)
+    }
+}
+
+impl<R> AvifHeader<R> {
+    pub fn has_alpha(&self) -> bool {
+        self.meta.alpha_item_id.is_some()
+    }
+
+    pub fn content_light_level(&self) -> Option<ContentLightLevel> {
+        self.data.content_light_level()
+    }
+
+    pub fn mastering_display(&self) -> Option<MasteringDisplayColourVolume> {
+        self.data.mastering_display()
     }
 }
 
@@ -339,7 +380,7 @@ impl AV1Metadata {
     /// Parses raw AV1 bitstream (OBU sequence header) only.
     ///
     /// This is for the bare image payload from an encoder, not an AVIF/HEIF file.
-    /// To parse AVIF files, see [`AvifData::from_reader()`].
+    /// To parse AVIF files, see [`AvifHeader::from_reader()`].
     #[inline(never)]
     pub fn parse_av1_bitstream(obu_bitstream: &[u8]) -> Result<Self> {
         let h = obu::parse_obu(obu_bitstream)?;
@@ -359,6 +400,7 @@ struct AvifInternalMeta {
     item_references: TryVec<SingleItemTypeReferenceBox>,
     properties: TryVec<AssociatedProperty>,
     primary_item_id: u32,
+    alpha_item_id: Option<u32>,
     iloc_items: TryVec<ItemLocationBoxItem>,
 }
 
@@ -736,11 +778,25 @@ fn skip_box_remain<T: Read>(src: &mut BMFFBox<T>) -> Result<()> {
     skip(src, remain)
 }
 
+/// Read metadata before loading the whole file
+pub struct AvifHeader<R> {
+    meta: AvifInternalMeta,
+    offset_reader: OffsetReader<R>,
+    mdats: TryVec<MediaDataBox>,
+    data: AvifData,
+}
+
 /// Read the contents of an AVIF file
 ///
-/// Metadata is accumulated and returned in [`AvifData`] struct,
+/// Metadata is accumulated and returned in [`AvifData`] struct.
+///
+/// Use [`AvifHeader::from_reader()`] to read metadata without buffering the whole file first.
 pub fn read_avif<T: Read + ?Sized>(f: &mut T) -> Result<AvifData> {
-    let f = OffsetReader::new(f);
+    read_avif_header(f)?.read_avif()
+}
+
+fn read_avif_header<R: Read>(reader: R) -> Result<AvifHeader<R>> {
+    let f = OffsetReader::new(reader);
 
     let mut iter = BoxIter::new(f);
 
@@ -760,17 +816,18 @@ pub fn read_avif<T: Read + ?Sized>(f: &mut T) -> Result<AvifData> {
         }
     }
 
-    let mut meta = None;
     let mut mdats = TryVec::new();
-
-    while let Some(mut b) = iter.next_box()? {
+    loop {
+        let mut b = iter.next_box()?.ok_or(Error::InvalidData("No MediaDataBox"))?;
         match b.head.name {
             BoxType::MetadataBox => {
-                if meta.is_some() {
-                    return Err(Error::InvalidData("There should be zero or one meta boxes per ISO 14496-12:2015 § 8.11.1.1"));
-                }
-                meta = Some(read_avif_meta(&mut b)?);
+                let meta = read_avif_meta(b)?;
+                let data = init_data(&meta);
+                return Ok(AvifHeader {
+                    meta, data, mdats, offset_reader: iter.src,
+                })
             },
+            // annoyingly, mdat is allowed to appear before meta
             BoxType::MediaDataBox => {
                 if b.bytes_left() > 0 {
                     let offset = b.offset();
@@ -783,10 +840,10 @@ pub fn read_avif<T: Read + ?Sized>(f: &mut T) -> Result<AvifData> {
 
         check_parser_state(&b.content)?;
     }
+}
 
-    let meta = meta.ok_or(Error::InvalidData("missing meta"))?;
-
-    let alpha_item_id = meta
+fn set_alpha_item_id(meta: &mut AvifInternalMeta) {
+    meta.alpha_item_id = meta
         .item_references
         .iter()
         // Auxiliary image for the primary image
@@ -808,7 +865,9 @@ pub fn read_avif<T: Read + ?Sized>(f: &mut T) -> Result<AvifData> {
                     }
             })
         });
+}
 
+fn init_data(meta: &AvifInternalMeta) -> AvifData {
     // Extract HDR metadata properties for the primary item
     let mut content_light_level = None;
     let mut mastering_display = None;
@@ -822,8 +881,8 @@ pub fn read_avif<T: Read + ?Sized>(f: &mut T) -> Result<AvifData> {
         }
     }
 
-    let mut context = AvifData {
-        premultiplied_alpha: alpha_item_id.is_some_and(|alpha_item_id| {
+    AvifData {
+        premultiplied_alpha: meta.alpha_item_id.is_some_and(|alpha_item_id| {
             meta.item_references.iter().any(|iref| {
                 iref.from_item_id == meta.primary_item_id
                     && iref.to_item_id == alpha_item_id
@@ -833,13 +892,35 @@ pub fn read_avif<T: Read + ?Sized>(f: &mut T) -> Result<AvifData> {
         content_light_level,
         mastering_display,
         ..Default::default()
-    };
+    }
+}
+
+fn read_avif_body<R: Read>(header: AvifHeader<R>) -> Result<AvifData> {
+    let AvifHeader { meta, offset_reader, mut mdats, data: mut context } = header;
+
+    let mut iter = BoxIter::new(offset_reader);
+    while let Some(mut b) = iter.next_box()? {
+        match b.head.name {
+            BoxType::MetadataBox => {
+                return Err(Error::InvalidData("There should be zero or one meta boxes per ISO 14496-12:2015 § 8.11.1.1"));
+            },
+            BoxType::MediaDataBox => {
+                if b.bytes_left() > 0 {
+                    let offset = b.offset();
+                    let data = b.read_into_try_vec()?;
+                    mdats.push(MediaDataBox { offset, data })?;
+                }
+            },
+            _ => skip_box_content(&mut b)?,
+        }
+        check_parser_state(&b.content)?;
+    }
 
     // load data of relevant items
     for loc in meta.iloc_items.iter() {
         let item_data = if loc.item_id == meta.primary_item_id {
             &mut context.primary_item
-        } else if Some(loc.item_id) == alpha_item_id {
+        } else if Some(loc.item_id) == meta.alpha_item_id {
             context.alpha_item.get_or_insert_with(TryVec::new)
         } else {
             continue;
@@ -875,8 +956,8 @@ pub fn read_avif<T: Read + ?Sized>(f: &mut T) -> Result<AvifData> {
 /// Currently requires the primary item to be an av01 item type and generates
 /// an error otherwise.
 /// See ISO 14496-12:2015 § 8.11.1
-fn read_avif_meta<T: Read>(src: &mut BMFFBox<T>) -> Result<AvifInternalMeta> {
-    let version = read_fullbox_version_no_flags(src)?;
+fn read_avif_meta<T: Read>(mut src: BMFFBox<T>) -> Result<AvifInternalMeta> {
+    let version = read_fullbox_version_no_flags(&mut src)?;
 
     if version != 0 {
         return Err(Error::Unsupported("unsupported meta version"));
@@ -920,6 +1001,7 @@ fn read_avif_meta<T: Read>(src: &mut BMFFBox<T>) -> Result<AvifInternalMeta> {
 
         check_parser_state(&b.content)?;
     }
+    check_parser_state(&src.content)?;
 
     let primary_item_id = primary_item_id.ok_or(Error::InvalidData("Required pitm box not present in meta box"))?;
 
@@ -937,12 +1019,15 @@ fn read_avif_meta<T: Read>(src: &mut BMFFBox<T>) -> Result<AvifInternalMeta> {
         return Err(Error::InvalidData("primary_item_id not present in iinf box"));
     }
 
-    Ok(AvifInternalMeta {
+    let mut meta = AvifInternalMeta {
         properties,
         item_references,
         primary_item_id,
+        alpha_item_id: None,
         iloc_items: iloc_items.ok_or(Error::InvalidData("iloc missing"))?,
-    })
+    };
+    set_alpha_item_id(&mut meta);
+    Ok(meta)
 }
 
 /// Parse a Primary Item Box
@@ -1199,7 +1284,7 @@ impl AuxiliaryTypeProperty {
         let split = self.aux_data.iter().position(|&b| b == b'\0')
             .and_then(|pos| self.aux_data.split_at_checked(pos));
         if let Some((aux_type, rest)) = split {
-            (aux_type, &rest.get(1..).unwrap_or(rest))
+            (aux_type, rest.get(1..).unwrap_or(rest))
         } else {
             (&self.aux_data, &[])
         }
