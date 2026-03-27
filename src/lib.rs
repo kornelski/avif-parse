@@ -75,24 +75,24 @@ trait Offset {
 }
 
 /// Wraps a reader to track the current offset
-struct OffsetReader<'a, T> {
+struct OffsetReader<'a, T: ?Sized> {
     reader: &'a mut T,
     offset: u64,
 }
 
-impl<'a, T> OffsetReader<'a, T> {
+impl<'a, T: ?Sized> OffsetReader<'a, T> {
     fn new(reader: &'a mut T) -> Self {
         Self { reader, offset: 0 }
     }
 }
 
-impl<T> Offset for OffsetReader<'_, T> {
+impl<T: ?Sized> Offset for OffsetReader<'_, T> {
     fn offset(&self) -> u64 {
         self.offset
     }
 }
 
-impl<T: Read> Read for OffsetReader<'_, T> {
+impl<T: Read + ?Sized> Read for OffsetReader<'_, T> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let bytes_read = self.reader.read(buf)?;
         self.offset = self
@@ -750,7 +750,7 @@ fn skip_box_remain<T: Read>(src: &mut BMFFBox<'_, T>) -> Result<()> {
 /// Read the contents of an AVIF file
 ///
 /// Metadata is accumulated and returned in [`AvifData`] struct,
-pub fn read_avif<T: Read>(f: &mut T) -> Result<AvifData> {
+pub fn read_avif<T: Read + ?Sized>(f: &mut T) -> Result<AvifData> {
     let mut f = OffsetReader::new(f);
 
     let mut iter = BoxIter::new(&mut f);
