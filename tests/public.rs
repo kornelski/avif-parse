@@ -26,6 +26,20 @@ fn public_avif_primary_item_split_extents() {
     assert_eq!(context.primary_item.len(), 4387);
 }
 
+/// A box of size 0 runs to the end of the file. Lightroom writes the `mdat` of its
+/// AVIFs like that, they were refused as "unknown sized box".
+#[test]
+fn public_avif_mdat_to_end_of_file() {
+    let mut data = std::fs::read(IMAGE_AVIF_EXTENTS).expect("Unknown file");
+    let expected = avif_parse::read_avif(&mut data.as_slice()).expect("read_avif failed");
+    let mdat = data.windows(4).position(|w| w == b"mdat").expect("no mdat") - 4;
+    let size = u32::from_be_bytes(data[mdat..mdat + 4].try_into().unwrap()) as usize;
+    assert_eq!(mdat + size, data.len(), "the mdat is the last box");
+    data[mdat..mdat + 4].copy_from_slice(&0u32.to_be_bytes());
+    let context = avif_parse::read_avif(&mut data.as_slice()).expect("read_avif failed on the mdat of size 0");
+    assert_eq!(context.primary_item[..], expected.primary_item[..]);
+}
+
 #[test]
 fn public_avif_bug_1655846() {
     let input = &mut File::open(IMAGE_AVIF_CORRUPT).expect("Unknown file");

@@ -211,6 +211,9 @@ struct BoxHeader {
 }
 
 impl BoxHeader {
+    /// The size of a box that runs to the end of the file, written as 0. ISO 14496-12
+    /// allows it for the last box, Lightroom writes the `mdat` of its AVIFs like that.
+    const TO_END: u64 = u64::MAX;
     /// 4-byte size + 4-byte type
     const MIN_SIZE: u64 = 8;
     /// 4-byte size + 4-byte type + 16-byte size
@@ -589,6 +592,12 @@ struct BMFFBox<T> {
 impl<T: Read> BMFFBox<T> {
     fn read_into_try_vec(&mut self) -> std::io::Result<TryVec<u8>> {
         let mut vec = std::vec::Vec::new();
+        if self.head.size == BoxHeader::TO_END {
+            // The size is not known before the end of the file
+            self.content.read_to_end(&mut vec)?;
+            self.content.set_limit(0);
+            return Ok(vec.into());
+        }
         vec.try_reserve_exact(self.content.limit() as usize)
             .map_err(|_| std::io::ErrorKind::OutOfMemory)?;
         self.content.read_to_end(&mut vec)?; // The default impl
@@ -688,7 +697,7 @@ fn read_box_header<T: ReadBytesExt>(src: &mut T) -> Result<BoxHeader> {
     let name = BoxType::from(be_u32(src)?);
     let size = match size32 {
         // valid only for top-level box and indicates it's the last box in the file.  usually mdat.
-        0 => return Err(Error::Unsupported("unknown sized box")),
+        0 => BoxHeader::TO_END,
         1 => {
             let size64 = be_u64(src)?;
             if size64 < BoxHeader::MIN_LARGE_SIZE {
@@ -754,6 +763,12 @@ fn read_fullbox_version_no_flags<T: ReadBytesExt>(src: &mut T) -> Result<u8> {
 
 /// Skip over the entire contents of a box.
 fn skip_box_content<T: Read>(src: &mut BMFFBox<T>) -> Result<()> {
+    if src.head.size == BoxHeader::TO_END {
+        debug!("{:?} to the end of the file (skipped)", src.head);
+        std::io::copy(&mut src.content, &mut std::io::sink())?;
+        src.content.set_limit(0);
+        return Ok(());
+    }
     // Skip the contents of unknown chunks.
     let to_skip = {
         let header = src.get_header();
