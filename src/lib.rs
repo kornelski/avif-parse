@@ -14,7 +14,7 @@ use fallible_collections::{TryClone, TryReserveError};
 use std::convert::{TryFrom, TryInto as _};
 
 use std::io::{BufRead, Read, Take};
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU64};
 use std::ops::{Range, RangeFrom};
 
 mod obu;
@@ -205,15 +205,22 @@ struct BoxHeader {
     /// Box type.
     name: BoxType,
     /// Size of the box in bytes.
-    size: u64,
+    size: Length,
     /// Offset to the start of the contained data (or header size).
     offset: u64,
 }
 
+/// The size of a box.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Length {
+    /// Written as 0, the box runs to the end of the file. ISO 14496-12 § 4.2 allows
+    /// it for the last box, Lightroom writes the `mdat` of its AVIFs like that.
+    ToEnd,
+    /// The size in bytes, including the header.
+    Fixed(NonZeroU64),
+}
+
 impl BoxHeader {
-    /// The size of a box that runs to the end of the file, written as 0. ISO 14496-12
-    /// allows it for the last box, Lightroom writes the `mdat` of its AVIFs like that.
-    const TO_END: u64 = u64::MAX;
     /// 4-byte size + 4-byte type
     const MIN_SIZE: u64 = 8;
     /// 4-byte size + 4-byte type + 16-byte size
@@ -592,7 +599,7 @@ struct BMFFBox<T> {
 impl<T: Read> BMFFBox<T> {
     fn read_into_try_vec(&mut self) -> std::io::Result<TryVec<u8>> {
         let mut vec = std::vec::Vec::new();
-        if self.head.size == BoxHeader::TO_END {
+        if self.head.size == Length::ToEnd {
             // The size is not known before the end of the file
             self.content.read_to_end(&mut vec)?;
             self.content.set_limit(0);
@@ -609,7 +616,7 @@ impl<T: Read> BMFFBox<T> {
 fn box_read_to_end() {
     let tmp = &mut b"1234567890".as_slice();
     let mut src = BMFFBox {
-        head: BoxHeader { name: BoxType::FileTypeBox, size: 5, offset: 0 },
+        head: BoxHeader { name: BoxType::FileTypeBox, size: Length::Fixed(NonZeroU64::new(5).unwrap()), offset: 0 },
         content: <_ as Read>::take(tmp, 5),
     };
     let buf = src.read_into_try_vec().unwrap();
@@ -621,7 +628,7 @@ fn box_read_to_end() {
 fn box_read_to_end_oom() {
     let tmp = &mut b"1234567890".as_slice();
     let mut src = BMFFBox {
-        head: BoxHeader { name: BoxType::FileTypeBox, size: 5, offset: 0 },
+        head: BoxHeader { name: BoxType::FileTypeBox, size: Length::Fixed(NonZeroU64::new(5).unwrap()), offset: 0 },
         content: <_ as Read>::take(tmp, usize::MAX.try_into().expect("usize < u64")),
     };
     assert!(src.read_into_try_vec().is_err());
@@ -641,7 +648,11 @@ impl<T: Read> BoxIter<T> {
         match r {
             Ok(h) => Ok(Some(BMFFBox {
                 head: h,
-                content: self.src.by_ref().take(h.size - h.offset),
+                content: self.src.by_ref().take(match h.size {
+                    Length::Fixed(size) => size.get() - h.offset,
+                    // `Take` needs a limit, the end of the file comes first
+                    Length::ToEnd => u64::MAX,
+                }),
             })),
             Err(Error::UnexpectedEOF) => Ok(None),
             Err(e) => Err(e),
@@ -697,19 +708,19 @@ fn read_box_header<T: ReadBytesExt>(src: &mut T) -> Result<BoxHeader> {
     let name = BoxType::from(be_u32(src)?);
     let size = match size32 {
         // valid only for top-level box and indicates it's the last box in the file.  usually mdat.
-        0 => BoxHeader::TO_END,
+        0 => Length::ToEnd,
         1 => {
             let size64 = be_u64(src)?;
             if size64 < BoxHeader::MIN_LARGE_SIZE {
                 return Err(Error::InvalidData("malformed wide size"));
             }
-            size64
+            Length::Fixed(NonZeroU64::new(size64).ok_or(Error::InvalidData("malformed wide size"))?)
         },
         _ => {
             if u64::from(size32) < BoxHeader::MIN_SIZE {
                 return Err(Error::InvalidData("malformed size"));
             }
-            u64::from(size32)
+            Length::Fixed(NonZeroU64::from(NonZeroU32::new(size32).ok_or(Error::InvalidData("malformed size"))?))
         },
     };
     let mut offset = match size32 {
@@ -717,7 +728,7 @@ fn read_box_header<T: ReadBytesExt>(src: &mut T) -> Result<BoxHeader> {
         _ => BoxHeader::MIN_SIZE,
     };
     let _uuid = if name == BoxType::UuidBox {
-        if size >= offset + 16 {
+        if size == Length::ToEnd || matches!(size, Length::Fixed(size) if size.get() >= offset + 16) {
             let mut buffer = [0u8; 16];
             let count = src.read(&mut buffer)?;
             offset += count.to_u64();
@@ -734,7 +745,9 @@ fn read_box_header<T: ReadBytesExt>(src: &mut T) -> Result<BoxHeader> {
     } else {
         None
     };
-    assert!(offset <= size);
+    if let Length::Fixed(size) = size {
+        assert!(offset <= size.get());
+    }
     Ok(BoxHeader { name, size, offset })
 }
 
@@ -763,20 +776,21 @@ fn read_fullbox_version_no_flags<T: ReadBytesExt>(src: &mut T) -> Result<u8> {
 
 /// Skip over the entire contents of a box.
 fn skip_box_content<T: Read>(src: &mut BMFFBox<T>) -> Result<()> {
-    if src.head.size == BoxHeader::TO_END {
-        debug!("{:?} to the end of the file (skipped)", src.head);
-        std::io::copy(&mut src.content, &mut std::io::sink())?;
-        src.content.set_limit(0);
-        return Ok(());
-    }
     // Skip the contents of unknown chunks.
     let to_skip = {
         let header = src.get_header();
         debug!("{header:?} (skipped)");
-        header
-            .size
-            .checked_sub(header.offset)
-            .ok_or(Error::InvalidData("header offset > size"))?
+        match header.size {
+            Length::Fixed(size) => size
+                .get()
+                .checked_sub(header.offset)
+                .ok_or(Error::InvalidData("header offset > size"))?,
+            Length::ToEnd => {
+                std::io::copy(&mut src.content, &mut std::io::sink())?;
+                src.content.set_limit(0);
+                return Ok(());
+            },
+        }
     };
     assert_eq!(to_skip, src.bytes_left());
     skip(src, to_skip)
